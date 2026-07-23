@@ -1,0 +1,247 @@
+{
+    "transaction_full": {
+        "id": "tx-1",
+        "value": 2999,
+        "status": "paid",
+        "is_paid": true,
+        "payment_method": "blik",
+        "creation_date": "2026-07-01 10:00:00",
+        "payment_date": "2026-07-01 10:01:00",
+        "settled": true,
+        "refunded": false,
+        "refunded_amount": 0,
+        "available_refund_amount": 2999,
+        "fully_refunded": false,
+        "direct": true,
+        "gateway_id": "gw-1",
+        "refunds": [
+            {
+                "payment_id": "rf-1",
+                "value": 500,
+                "status": "paid",
+                "creation_date": "2026-07-02 09:00:00",
+                "payment_date": null
+            }
+        ]
+    },
+    "transaction_broken": {
+        "id": "12345",
+        "value": 0,
+        "status": "unknown_status",
+        "is_paid": false,
+        "payment_method": null,
+        "creation_date": null,
+        "payment_date": null,
+        "settled": true,
+        "refunded": false,
+        "refunded_amount": 0,
+        "available_refund_amount": 1050,
+        "fully_refunded": false,
+        "direct": true,
+        "gateway_id": null,
+        "refunds": []
+    },
+    "transaction_empty": {
+        "id": "",
+        "value": 0,
+        "status": "",
+        "is_paid": false,
+        "payment_method": null,
+        "creation_date": null,
+        "payment_date": null,
+        "settled": false,
+        "refunded": false,
+        "refunded_amount": 0,
+        "available_refund_amount": 0,
+        "fully_refunded": false,
+        "direct": false,
+        "gateway_id": null,
+        "refunds": []
+    },
+    "registered_redirect": {
+        "transaction_id": "tx-1",
+        "message": "https://secure.dpay.pl/pay/1",
+        "redirect_url": "https://secure.dpay.pl/pay/1",
+        "is_paid": false,
+        "is_inline": false,
+        "ipksef": "KSEF-1",
+        "card_recurring_alias": null
+    },
+    "registered_paid": {
+        "transaction_id": "tx-2",
+        "message": "Transaction paid",
+        "redirect_url": null,
+        "is_paid": true,
+        "is_inline": false,
+        "ipksef": null,
+        "card_recurring_alias": "ca-1"
+    },
+    "registered_inline": {
+        "transaction_id": "tx-3",
+        "message": "Internal processing",
+        "redirect_url": null,
+        "is_paid": false,
+        "is_inline": true,
+        "ipksef": null,
+        "card_recurring_alias": null
+    },
+    "refund_accepted": {
+        "accepted": true,
+        "message": "accepted"
+    },
+    "refund_rejected": {
+        "accepted": false,
+        "message": "too late"
+    },
+    "availability": {
+        "available": false,
+        "message": "not available",
+        "http_status": 409
+    },
+    "bank_full": {
+        "id": "1",
+        "name": "Bank A",
+        "image": "https://a/logo.png",
+        "on_from": 0,
+        "on_to": 24,
+        "iterator": 3,
+        "test": false,
+        "type": "pbl"
+    },
+    "bank_sparse": {
+        "id": "2",
+        "name": "Bank B",
+        "image": null,
+        "on_from": 0,
+        "on_to": 0,
+        "iterator": null,
+        "test": false,
+        "type": null
+    },
+    "payout_full": {
+        "id": 42,
+        "state": 1,
+        "is_waiting": false,
+        "is_processed": true,
+        "is_failed": false,
+        "net": 10000,
+        "fee": 250,
+        "gross": 10250,
+        "creation_date": "2026-07-01 09:00:00",
+        "direct_settlement": true,
+        "nrb": "PL61",
+        "declined": false,
+        "decline_reason": null,
+        "decline_status": null,
+        "receiver": {
+            "nrb": "PL62",
+            "title": "Wypłata",
+            "amount": 10000,
+            "service": "svc",
+            "receiver_name": "Jan Kowalski",
+            "receiver_address": "Warszawa"
+        }
+    },
+    "payout_failed": {
+        "id": 1,
+        "state": -1,
+        "is_waiting": false,
+        "is_processed": false,
+        "is_failed": true,
+        "net": 0,
+        "fee": 0,
+        "gross": 0,
+        "creation_date": null,
+        "direct_settlement": false,
+        "nrb": null,
+        "declined": true,
+        "decline_reason": "no funds",
+        "decline_status": "R01",
+        "receiver": null
+    },
+    "blik_alias": {
+        "value": "alias-1",
+        "type": "UID",
+        "status": "ACTIVE",
+        "is_active": true,
+        "expiration_date": "2027-01-01",
+        "apps": [
+            {
+                "key": "mbank",
+                "label": "mBank"
+            }
+        ]
+    },
+    "blik_recurring": {
+        "value": "payid-1",
+        "type": "PAYID",
+        "status": "ACTIVE",
+        "is_active": true,
+        "registration": {
+            "model": "A",
+            "frequency": "1M",
+            "limit_amt": 5000,
+            "tot_limit_amt": 60000,
+            "is_limit_amt_fixed": true,
+            "init_date": "2026-08-01",
+            "label": "Subskrypcja",
+            "registered_at": "2026-07-01 12:00:00"
+        }
+    },
+    "card_form": {
+        "redirect_type": "FORM",
+        "is_success": false,
+        "requires_form": true,
+        "requires_redirect": false,
+        "has_dcc_offer": false,
+        "form_html": "<form>3ds</form>",
+        "redirect_url": null,
+        "dcc_offer": null
+    },
+    "card_url": {
+        "redirect_type": "URL",
+        "is_success": false,
+        "requires_form": false,
+        "requires_redirect": true,
+        "has_dcc_offer": false,
+        "form_html": null,
+        "redirect_url": "https://3ds.test/r",
+        "dcc_offer": null
+    },
+    "card_bad_base64": {
+        "redirect_type": "URL",
+        "is_success": false,
+        "requires_form": false,
+        "requires_redirect": true,
+        "has_dcc_offer": false,
+        "form_html": null,
+        "redirect_url": null,
+        "dcc_offer": null
+    },
+    "card_dcc": {
+        "redirect_type": "DCC_OFFER",
+        "is_success": false,
+        "requires_form": false,
+        "requires_redirect": false,
+        "has_dcc_offer": true,
+        "form_html": null,
+        "redirect_url": null,
+        "dcc_offer": {
+            "currency_conversion_id": "cc-1",
+            "original_amount": 2999,
+            "original_currency": "PLN",
+            "converted_amount": 699,
+            "converted_currency": "EUR",
+            "exchange_rate": 4.29,
+            "valid_until": "2026-07-22T12:00:00Z",
+            "declaration_text": "Zgoda PSD2",
+            "markup": [
+                {
+                    "rate": 0.03,
+                    "additional_info": "prowizja"
+                }
+            ],
+            "eea": true
+        }
+    }
+}

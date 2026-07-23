@@ -1,0 +1,101 @@
+{
+    "checksums": {
+        "secret_second_empty": "0db1611869906ece584e287a28f3e8e76873301fc2699af37fb175f399b16281",
+        "secret_second_mixed": "91706cdd950edf5716a928691b6e8d9277f673868d7aed63b7d1b7f4376b5a93",
+        "ordered_simple": "2ec685f77fbe24752a582a413055f552fa0b8013202863850752bb09c16efbdd",
+        "ordered_mixed": "89bee2cfedf3b77429d1e82da4c42683a5986d461be3be4ac9f483a10ec6439d"
+    },
+    "ipn": [
+        {
+            "body": "{\"id\":\"tx-1\",\"amount\":\"29.99\",\"email\":\"jan@example.com\",\"type\":\"transfer\",\"attempt\":1,\"version\":2,\"custom\":\"order-1\",\"signature\":\"9cb0740c57dfec7016317d0aae31edb316ff339fa12892114dc672022ae171f1\"}",
+            "signature": "9cb0740c57dfec7016317d0aae31edb316ff339fa12892114dc672022ae171f1"
+        },
+        {
+            "body": "{\"id\":\"tx-2\",\"amount\":\"10.50\",\"type\":\"dcb\",\"attempt\":3,\"version\":1,\"signature\":\"21ab76700bad94388358093b14133e7cf328c0b6e5908f9edd62108980bf8023\"}",
+            "signature": "21ab76700bad94388358093b14133e7cf328c0b6e5908f9edd62108980bf8023"
+        },
+        {
+            "body": "{\"id\":\"tx-3\",\"amount\":10.5,\"email\":\"\",\"type\":\"capture\",\"attempt\":\"1\",\"version\":\"1\",\"custom\":\"\",\"capture_payment_id\":\"cap-9\",\"signature\":\"9d23d9fa10d960d1598f25852d53e304f6a76d80f4a39d02ac9e0c8f5f2177ad\"}",
+            "signature": "9d23d9fa10d960d1598f25852d53e304f6a76d80f4a39d02ac9e0c8f5f2177ad"
+        }
+    ],
+    "strval": [
+        {
+            "json": "10",
+            "strval": "10"
+        },
+        {
+            "json": "10.5",
+            "strval": "10.5"
+        },
+        {
+            "json": "0.1",
+            "strval": "0.1"
+        },
+        {
+            "json": "0.3333333333333333",
+            "strval": "0.33333333333333"
+        },
+        {
+            "json": "1.0e+25",
+            "strval": "1.0E+25"
+        },
+        {
+            "json": "1.0e-7",
+            "strval": "1.0E-7"
+        },
+        {
+            "json": "-0",
+            "strval": "-0"
+        },
+        {
+            "json": "100",
+            "strval": "100"
+        },
+        {
+            "json": "828.5",
+            "strval": "828.5"
+        },
+        {
+            "json": "true",
+            "strval": "1"
+        },
+        {
+            "json": "false",
+            "strval": ""
+        },
+        {
+            "json": "null",
+            "strval": ""
+        },
+        {
+            "json": "42",
+            "strval": "42"
+        },
+        {
+            "json": "\"abc\"",
+            "strval": "abc"
+        },
+        {
+            "json": "\"\"",
+            "strval": ""
+        }
+    ],
+    "money_to_decimal": {
+        "1050": "10.50",
+        "1000": "10.00",
+        "5": "0.05",
+        "0": "0.00",
+        "-2000": "-20.00",
+        "-5": "-0.05",
+        "123456789": "1234567.89"
+    },
+    "float_cast": {
+        "29.99": "{\"amount\":29.99}",
+        "10.00": "{\"amount\":10}",
+        "0.05": "{\"amount\":0.05}",
+        "-20.00": "{\"amount\":-20}",
+        "1234567.89": "{\"amount\":1234567.89}"
+    },
+    "card_payload": "{\"PN\":\"4111111111111111\",\"SC\":\"123\",\"DT\":\"12\\/25\",\"ID\":\"tx-1\",\"TX\":1784700000}"
+}

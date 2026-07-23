@@ -1,0 +1,44 @@
+{
+  "transaction_full": {
+    "transaction": {"id": "tx-1", "value": "29.99", "status": "paid", "payment_method": "blik",
+      "creation_date": "2026-07-01 10:00:00", "payment_date": "2026-07-01 10:01:00",
+      "settled": true, "refunded": false, "refunded_amount": 0, "available_refund_amount": "29.99",
+      "fully_refunded": false, "direct": true, "gateway_id": "gw-1"},
+    "payer": {"email": "jan@example.com"},
+    "refunds": [{"payment_id": "rf-1", "value": "5.00", "status": "paid", "creation_date": "2026-07-02 09:00:00"}]
+  },
+  "transaction_broken": {
+    "transaction": {"id": 12345, "value": "nie-liczba", "status": "unknown_status",
+      "settled": "yes", "refunded_amount": [], "available_refund_amount": 10.5, "direct": 1}
+  },
+  "transaction_empty": {},
+  "registered_redirect": {"transactionId": "tx-1", "msg": "https://secure.dpay.pl/pay/1", "ipksef": "KSEF-1"},
+  "registered_paid": {"transactionId": "tx-2", "msg": "Transaction paid",
+    "additionalInfo": {"card_recurring_alias": "ca-1"}},
+  "registered_inline": {"transactionId": "tx-3", "msg": "Internal processing"},
+  "refund_accepted": {"status": "success", "refund": true, "message": "accepted"},
+  "refund_rejected": {"status": "error", "refund": false, "message": "too late"},
+  "availability": {"refund": false, "message": "not available"},
+  "bank_full": {"id": "1", "name": "Bank A", "image": "https://a/logo.png", "on_from": 0, "on_to": 24,
+    "iterator": 3, "test": false, "type": "pbl"},
+  "bank_sparse": {"id": 2, "name": "Bank B"},
+  "payout_full": {"id": 42, "state": 1, "net": "100.00", "fee": "2.50", "gross": "102.50",
+    "creation_date": "2026-07-01 09:00:00", "direct_settlement": 1, "nrb": "PL61",
+    "declined": 0, "receiver": {"nrb": "PL62", "title": "Wypłata", "amount": "100.00",
+      "service": "svc", "receiverName": "Jan Kowalski", "receiverAddress": "Warszawa"}},
+  "payout_failed": {"id": 1, "state": -1, "declined": 1, "decline_reason": "no funds", "decline_status": "R01"},
+  "blik_alias": {"alias_value": "alias-1", "alias_type": "UID", "status": "ACTIVE",
+    "expiration_date": "2027-01-01", "apps": [{"key": "mbank", "label": "mBank"}]},
+  "blik_recurring": {"alias_value": "payid-1", "alias_type": "PAYID", "status": "ACTIVE",
+    "registration": {"model": "A", "frequency": "1M", "limit_amt": 5000, "tot_limit_amt": 60000,
+      "is_limit_amt_fixed": true, "init_date": "2026-08-01", "label": "Subskrypcja",
+      "registered_at": "2026-07-01 12:00:00"}},
+  "card_form": {"success": true, "message": {"redirectType": "FORM", "redirectText": "PGZvcm0+M2RzPC9mb3JtPg=="}},
+  "card_url": {"success": true, "message": {"redirectType": "URL", "redirectText": "aHR0cHM6Ly8zZHMudGVzdC9y"}},
+  "card_bad_base64": {"success": true, "message": {"redirectType": "URL", "redirectText": "!!!not base64!!!"}},
+  "card_dcc": {"success": true, "message": {"redirectType": "DCC_OFFER", "dccOffer": {
+    "currencyConversionId": "cc-1", "originalAmount": "29.99", "originalCurrency": "PLN",
+    "convertedAmount": "6.99", "convertedCurrency": "EUR", "exchangeRate": 4.29,
+    "validUntil": "2026-07-22T12:00:00Z", "declarationText": "Zgoda PSD2",
+    "markup": [{"rate": 0.03, "additionalInfo": "prowizja"}], "europeanEconomicArea": true}}}
+}
