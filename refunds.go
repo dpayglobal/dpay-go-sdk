@@ -16,8 +16,9 @@ type RefundService struct {
 type RefundOption func(*refundOptions)
 
 type refundOptions struct {
-	amount *Money
-	reason *string
+	amount  *Money
+	reason  *string
+	webhook *WebhookTarget
 }
 
 // WithRefundAmount refunds only part of the transaction.
@@ -30,11 +31,24 @@ func WithRefundReason(reason string) RefundOption {
 	return func(options *refundOptions) { options.reason = &reason }
 }
 
-func (s *RefundService) signedBody(transactionID string, opts []RefundOption) *wire.Body {
+// WithRefundWebhook sends the refund.succeeded / refund.failed events of this
+// refund also to target, signed with the webhook secret of the service. Unlike
+// in a payment registration the webhook object enters the checksum: its url and
+// events are hashed in the order they are sent. Only Create sends it -
+// CheckAvailability ignores it, like the PHP SDK.
+func WithRefundWebhook(target WebhookTarget) RefundOption {
+	return func(options *refundOptions) { options.webhook = &target }
+}
+
+func resolveRefundOptions(opts []RefundOption) *refundOptions {
 	options := &refundOptions{}
 	for _, apply := range opts {
 		apply(options)
 	}
+	return options
+}
+
+func (s *RefundService) signedBody(transactionID string, options *refundOptions, withWebhook bool) *wire.Body {
 	body := wire.NewBody()
 	body.Set("service", s.client.service)
 	body.Set("transaction_id", transactionID)
@@ -44,13 +58,24 @@ func (s *RefundService) signedBody(transactionID string, opts []RefundOption) *w
 	if options.reason != nil {
 		body.Set("reason", *options.reason)
 	}
-	body.Set("checksum", s.client.checksum.OrderedBody(body.Values()))
+	if withWebhook && options.webhook != nil {
+		body.Set("webhook", options.webhook.toBody())
+	}
+	body.Set("checksum", s.client.checksum.OrderedBody(body))
 	return body
 }
 
-// Create refunds a transaction, in full unless WithRefundAmount narrows it.
+// Create orders a refund, in full unless WithRefundAmount narrows it. A
+// successful response means dpay accepted the refund; its outcome comes as a
+// refund.succeeded or refund.failed webhook event.
 func (s *RefundService) Create(ctx context.Context, transactionID string, opts ...RefundOption) (*Refund, error) {
-	data, err := s.client.postJSONObject(ctx, hostPanel, "/api/v1/pbl/refund", s.signedBody(transactionID, opts))
+	options := resolveRefundOptions(opts)
+	if options.webhook != nil {
+		if err := options.webhook.validateFor(RefundEventTypes(), "a refund"); err != nil {
+			return nil, err
+		}
+	}
+	data, err := s.client.postJSONObject(ctx, hostPanel, "/api/v1/pbl/refund", s.signedBody(transactionID, options, true))
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +88,7 @@ var availabilityOutcomeStatuses = map[int]bool{200: true, 400: true, 402: true, 
 // uses to express a business outcome are returned as a result, not as an error.
 func (s *RefundService) CheckAvailability(ctx context.Context, transactionID string, opts ...RefundOption) (*RefundAvailability, error) {
 	response, err := s.client.sendBody(ctx, "POST", hostPanel,
-		"/api/v1/pbl/check-refund-availability", s.signedBody(transactionID, opts))
+		"/api/v1/pbl/check-refund-availability", s.signedBody(transactionID, resolveRefundOptions(opts), false))
 	if err != nil {
 		return nil, err
 	}

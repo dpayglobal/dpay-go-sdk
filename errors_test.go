@@ -201,3 +201,59 @@ func TestMapAPIErrorRateLimit(t *testing.T) {
 		t.Fatal("absent header must stay nil")
 	}
 }
+
+func TestMapAPIErrorCodeAndReasonOfCardsAndWebhookErrors(t *testing.T) {
+	var apiErr *APIError
+	body := `{"success":false,"status":"error","code":"WEBHOOK_URL_INVALID","reason":"https_required","message":"Invalid webhook URL: https_required"}`
+	err := mapAPIError(response(400, body, nil))
+	if !errors.Is(err, ErrInvalidRequest) || !errors.As(err, &apiErr) {
+		t.Fatalf("err = %v", err)
+	}
+	if apiErr.ErrorCode != "WEBHOOK_URL_INVALID" || apiErr.Reason != "https_required" {
+		t.Fatalf("apiErr = %+v", apiErr)
+	}
+}
+
+func TestMapAPIErrorMissingChecksumIsAnAuthenticationError(t *testing.T) {
+	var apiErr *APIError
+	body := `{"success":false,"status":"error","code":"CHECKSUM_REQUIRED","message":"Missing service or checksum"}`
+	err := mapAPIError(response(401, body, nil))
+	if !errors.Is(err, ErrAuthentication) || !errors.As(err, &apiErr) || apiErr.ErrorCode != "CHECKSUM_REQUIRED" || apiErr.Reason != "" {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestMapAPIErrorPrefersCodeOverErrorcode(t *testing.T) {
+	var apiErr *APIError
+	errors.As(mapAPIError(response(400, `{"code":"INVALID_CHECKSUM","errorcode":"err01","reason":5}`, nil)), &apiErr)
+	if apiErr.ErrorCode != "INVALID_CHECKSUM" || apiErr.Reason != "" {
+		t.Fatalf("apiErr = %+v", apiErr)
+	}
+	errors.As(mapAPIError(response(400, `{"code":7,"errorcode":"err01"}`, nil)), &apiErr)
+	if apiErr.ErrorCode != "err01" {
+		t.Fatalf("a non-string code falls back to errorcode: %+v", apiErr)
+	}
+}
+
+func TestMapAPIErrorRateLimitCarriesNoReason(t *testing.T) {
+	var rateLimit *RateLimitError
+	errors.As(mapAPIError(response(429, `{"message":"slow","code":"X","reason":"y"}`, nil)), &rateLimit)
+	if rateLimit == nil || rateLimit.ErrorCode != "" || rateLimit.Reason != "" {
+		t.Fatalf("rateLimit = %+v", rateLimit)
+	}
+}
+
+func TestPaymentRejectedCarriesTheErrorDescription(t *testing.T) {
+	server, _, _ := recordingServer(t, 200, `{"error":true,"msg":"Transaction canceled","status":false,"transactionId":"tx-9",`+
+		`"additionalInfo":{"error":"INSUFFICIENT_FUNDS","error_description":"IssId: 1"}}`)
+	client, _ := New("svc", "hash", WithBaseURLs(BaseURLs{APIPayments: server.URL}))
+
+	_, err := client.Payments.Register(context.Background(), minimalRequest())
+	var rejected *PaymentRejectedError
+	if !errors.As(err, &rejected) {
+		t.Fatalf("err = %v", err)
+	}
+	if rejected.ErrorCode != "INSUFFICIENT_FUNDS" || rejected.ErrorDescription != "IssId: 1" || rejected.TransactionID != "tx-9" {
+		t.Fatalf("rejected = %+v", rejected)
+	}
+}

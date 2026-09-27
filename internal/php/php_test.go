@@ -145,6 +145,47 @@ func TestIsNumeric(t *testing.T) {
 	}
 }
 
+func TestTrim(t *testing.T) {
+	cases := map[string]string{
+		"  order-1\t\n":   "order-1",
+		"\x00\x0Bx\r":     "x",
+		"\u00a0order\f":   "\u00a0order\f",
+		"inner  space ":   "inner  space",
+		"":                "",
+		" \t\n\r\x00\x0B": "",
+	}
+	for in, want := range cases {
+		if got := Trim(in); got != want {
+			t.Errorf("Trim(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestBase64DecodeStrict(t *testing.T) {
+	valid := map[string]string{
+		"ZHBheS1zZGstc3ludGhldGljLXRlc3Qtc2VjcmV0ISE=": "dpay-sdk-synthetic-test-secret!!",
+		"ZHBheS1zZGstc3ludGhldGljLXRlc3Qtc2VjcmV0ISE":  "dpay-sdk-synthetic-test-secret!!",
+		"YWI=":       "ab",
+		"YW I=\r\n":  "ab",
+		"YQ==":       "a",
+		"YQ":         "a",
+		"":           "",
+		"YWJj":       "abc",
+		"  YWJj\t\n": "abc",
+	}
+	for in, want := range valid {
+		got, ok := Base64DecodeStrict(in)
+		if !ok || string(got) != want {
+			t.Errorf("Base64DecodeStrict(%q) = %q, %v, want %q", in, got, ok, want)
+		}
+	}
+	for _, in := range []string{"***", "YWI=YQ", "Y", "YWJjZ", "YQ===", "YWI==", "YW-I", "YWJj\x0b"} {
+		if got, ok := Base64DecodeStrict(in); ok {
+			t.Errorf("Base64DecodeStrict(%q) = %q, want a failure", in, got)
+		}
+	}
+}
+
 func TestIsScalar(t *testing.T) {
 	for _, v := range []any{1, 1.5, "x", true} {
 		if !IsScalar(v) {

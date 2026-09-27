@@ -134,34 +134,30 @@ func TestCardsPayOTPAndPreAuth(t *testing.T) {
 	}
 }
 
-func TestCardsCaptureAndCancel(t *testing.T) {
-	amount := PLN(2999)
+func TestCardsCaptureAndCancelAreSigned(t *testing.T) {
+	amount := PLN(5999)
 	cases := []struct {
 		name     string
-		amount   *Money
 		wantBody string
 		path     string
-		call     func(*Client, *Money) error
+		call     func(*Client) error
 	}{
-		{"capture with amount", &amount, `{"amount":29.99}`, "/api/v1_0/cards/payment/tx-1/capture",
-			func(c *Client, m *Money) error {
-				_, err := c.Cards.Capture(context.Background(), "tx-1", m)
-				return err
-			}},
-		{"capture full", nil, `{}`, "/api/v1_0/cards/payment/tx-1/capture",
-			func(c *Client, m *Money) error {
-				_, err := c.Cards.Capture(context.Background(), "tx-1", m)
-				return err
-			}},
-		{"cancel with amount", &amount, `{"amount":29.99}`, "/api/v1_0/cards/payment/tx-1/cancellation",
-			func(c *Client, m *Money) error { _, err := c.Cards.Cancel(context.Background(), "tx-1", m); return err }},
-		{"cancel full", nil, `{}`, "/api/v1_0/cards/payment/tx-1/cancellation",
-			func(c *Client, m *Money) error { _, err := c.Cards.Cancel(context.Background(), "tx-1", m); return err }},
+		// the same bodies as tests/Card/CardServiceTest.php of the PHP SDK
+		{"capture", `{"service":"MyShop","amount":59.99,"checksum":"f9f3713764216075a7e1e56a10baa695f802929e70453a0b68146d56d5d3c925"}`,
+			"/api/v1_0/cards/payment/TX-1/capture",
+			func(c *Client) error { _, err := c.Cards.Capture(context.Background(), "TX-1", amount); return err }},
+		{"cancel full", `{"service":"MyShop","checksum":"adde47e5fce49c92912d41cb34f44b363c6fe426f0c14aa3b5f58a061c7f4c4c"}`,
+			"/api/v1_0/cards/payment/TX-1/cancellation",
+			func(c *Client) error { _, err := c.Cards.Cancel(context.Background(), "TX-1", nil); return err }},
+		{"cancel with amount", `{"service":"MyShop","amount":59.99,"checksum":"` +
+			sha256Hex(t, "cancellation|MyShop|TX-1|59.99|secret123") + `"}`,
+			"/api/v1_0/cards/payment/TX-1/cancellation",
+			func(c *Client) error { _, err := c.Cards.Cancel(context.Background(), "TX-1", &amount); return err }},
 	}
 	for _, testCase := range cases {
 		server, sent, path := recordingServer(t, 200, `{"success":true,"message":{"redirectType":"SUCCESS"}}`)
-		client, _ := New("svc", "hash", WithBaseURLs(BaseURLs{APIPayments: server.URL}))
-		if err := testCase.call(client, testCase.amount); err != nil {
+		client, _ := New("MyShop", "secret123", WithBaseURLs(BaseURLs{APIPayments: server.URL}))
+		if err := testCase.call(client); err != nil {
 			t.Fatalf("%s: %v", testCase.name, err)
 		}
 		if *sent != testCase.wantBody {
@@ -170,6 +166,42 @@ func TestCardsCaptureAndCancel(t *testing.T) {
 		if *path != testCase.path {
 			t.Fatalf("%s path = %q", testCase.name, *path)
 		}
+	}
+}
+
+func TestCardsCaptureWithWebhookKeepsItOutOfTheChecksum(t *testing.T) {
+	server, sent, _ := recordingServer(t, 200, `{"success":true,"message":{"redirectType":"SUCCESS"}}`)
+	client, _ := New("MyShop", "secret123", WithBaseURLs(BaseURLs{APIPayments: server.URL}))
+
+	target := WebhookTarget{URL: "https://shop.test/webhooks/captures", Events: []WebhookEventType{WebhookEventTypePaymentCaptured}}
+	if _, err := client.Cards.Capture(context.Background(), "TX-1", PLN(1500), WithCaptureWebhook(target)); err != nil {
+		t.Fatal(err)
+	}
+	want := `{"service":"MyShop","amount":15,"webhook":{"url":"https://shop.test/webhooks/captures","events":["payment.captured"]},` +
+		`"checksum":"` + sha256Hex(t, "capture|MyShop|TX-1|15.00|secret123") + `"}`
+	if *sent != want {
+		t.Fatalf("body = %s\nwant   %s", *sent, want)
+	}
+}
+
+func TestCardsCaptureWebhookAllowsOnlyPaymentCaptured(t *testing.T) {
+	client, _ := New("svc", "hash", WithBaseURLs(BaseURLs{APIPayments: "http://127.0.0.1:1"}))
+	target := WebhookTarget{URL: "https://shop.test/webhooks", Events: []WebhookEventType{WebhookEventTypePaymentSucceeded}}
+	_, err := client.Cards.Capture(context.Background(), "TX-1", PLN(1500), WithCaptureWebhook(target))
+	if !errors.Is(err, ErrInvalidArgument) ||
+		err.Error() != `dpay: Event "payment.succeeded" is not allowed in the webhook object of a card capture` {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestCardsCaptureMapsChecksumErrors(t *testing.T) {
+	server, _, _ := recordingServer(t, 401,
+		`{"success":false,"status":"error","code":"CHECKSUM_REQUIRED","message":"Missing service or checksum"}`)
+	client, _ := New("svc", "hash", WithBaseURLs(BaseURLs{APIPayments: server.URL}))
+	_, err := client.Cards.Capture(context.Background(), "TX-1", PLN(1500))
+	var apiErr *APIError
+	if !errors.Is(err, ErrAuthentication) || !errors.As(err, &apiErr) || apiErr.ErrorCode != "CHECKSUM_REQUIRED" {
+		t.Fatalf("err = %v", err)
 	}
 }
 
@@ -230,7 +262,7 @@ func TestCardPaymentFailureIsCardPaymentError(t *testing.T) {
 	server, _, _ := recordingServer(t, 200, `{"success":false,"message":"DCC_OFFER_EXPIRED"}`)
 	client, _ := New("svc", "hash", WithBaseURLs(BaseURLs{APIPayments: server.URL}))
 
-	_, err := client.Cards.Capture(context.Background(), "tx-1", nil)
+	_, err := client.Cards.Capture(context.Background(), "tx-1", PLN(2999))
 	if !errors.Is(err, ErrCardPayment) {
 		t.Fatalf("err = %v", err)
 	}
@@ -248,7 +280,7 @@ func TestCardPaymentResultForms(t *testing.T) {
 	server, _, _ := recordingServer(t, 200,
 		`{"success":true,"message":{"redirectType":"FORM","redirectText":"`+html+`"}}`)
 	client, _ := New("svc", "hash", WithBaseURLs(BaseURLs{APIPayments: server.URL}))
-	result, _ := client.Cards.Capture(context.Background(), "tx-1", nil)
+	result, _ := client.Cards.Capture(context.Background(), "tx-1", PLN(2999))
 	if !result.RequiresThreeDSForm() || result.ThreeDSFormHTML() != "<form>3ds</form>" {
 		t.Fatalf("form handling: %q", result.ThreeDSFormHTML())
 	}
@@ -260,7 +292,7 @@ func TestCardPaymentResultForms(t *testing.T) {
 	server, _, _ = recordingServer(t, 200,
 		`{"success":true,"message":{"redirectType":"URL","redirectText":"`+url+`"}}`)
 	client, _ = New("svc", "hash", WithBaseURLs(BaseURLs{APIPayments: server.URL}))
-	result, _ = client.Cards.Capture(context.Background(), "tx-1", nil)
+	result, _ = client.Cards.Capture(context.Background(), "tx-1", PLN(2999))
 	if !result.RequiresRedirect() || result.RedirectURL() != "https://3ds.test/redirect" {
 		t.Fatalf("url handling: %q", result.RedirectURL())
 	}
@@ -268,7 +300,7 @@ func TestCardPaymentResultForms(t *testing.T) {
 	server, _, _ = recordingServer(t, 200,
 		`{"success":true,"message":{"redirectType":"URL","redirectText":"!!!not base64!!!"}}`)
 	client, _ = New("svc", "hash", WithBaseURLs(BaseURLs{APIPayments: server.URL}))
-	result, _ = client.Cards.Capture(context.Background(), "tx-1", nil)
+	result, _ = client.Cards.Capture(context.Background(), "tx-1", PLN(2999))
 	if result.RedirectURL() != "" {
 		t.Fatal("undecodable base64 must yield an empty URL, not garbage")
 	}
@@ -282,7 +314,7 @@ func TestCardPaymentResultDCCOffer(t *testing.T) {
 		"markup":[{"rate":0.03,"additionalInfo":"prowizja"}],"europeanEconomicArea":true}}}`)
 	client, _ := New("svc", "hash", WithBaseURLs(BaseURLs{APIPayments: server.URL}))
 
-	result, _ := client.Cards.Capture(context.Background(), "tx-1", nil)
+	result, _ := client.Cards.Capture(context.Background(), "tx-1", PLN(2999))
 	if !result.HasDCCOffer() {
 		t.Fatal("HasDCCOffer broken")
 	}

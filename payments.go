@@ -12,18 +12,25 @@ type PaymentService struct {
 	client *Client
 }
 
-// Register creates a payment and returns the redirect target or the inline result.
+// Register creates a payment and returns the redirect target or the inline
+// result. The checksum is sha256(service|hash|value|url_success|url_fail|url_ipn),
+// with an empty url_ipn segment without an IPN URL; a recurring charge appends
+// its alias, which binds the charge to that customer.
 func (s *PaymentService) Register(ctx context.Context, request *RegisterPaymentRequest) (*RegisteredPayment, error) {
 	body, err := request.toBody(s.client.service)
 	if err != nil {
 		return nil, err
 	}
-	body.Set("checksum", s.client.checksum.SecretSecond(s.client.service, []any{
+	fields := []any{
 		bodyString(body, "value"),
 		bodyString(body, "url_success"),
 		bodyString(body, "url_fail"),
 		bodyString(body, "url_ipn"),
-	}))
+	}
+	if _, charge := body.Get("recurring_alias"); charge {
+		fields = append(fields, bodyString(body, "recurring_alias"))
+	}
+	body.Set("checksum", s.client.checksum.SecretSecond(s.client.service, fields))
 
 	data, err := s.client.postJSONObject(ctx, hostAPIPayments, "/api/v1_0/payments/register", body)
 	if err != nil {
@@ -40,7 +47,7 @@ func (s *PaymentService) Details(ctx context.Context, transactionID string) (*Tr
 	body := wire.NewBody()
 	body.Set("service", s.client.service)
 	body.Set("transaction_id", transactionID)
-	body.Set("checksum", s.client.checksum.OrderedBody(body.Values()))
+	body.Set("checksum", s.client.checksum.OrderedBody(body))
 
 	data, err := s.client.postJSONObject(ctx, hostPanel, "/api/v1/pbl/details", body)
 	if err != nil {
@@ -75,16 +82,18 @@ func paymentRejectedFromAPI(data map[string]any) *PaymentRejectedError {
 	if value, ok := data["msg"].(string); ok {
 		message = value
 	}
+	additionalInfo := objectField(data, "additionalInfo")
 	return &PaymentRejectedError{
 		APIError: &APIError{
 			kind:        ErrPaymentRejected,
 			message:     message,
 			HTTPStatus:  200,
-			ErrorCode:   stringField(objectField(data, "additionalInfo"), "error"),
+			ErrorCode:   stringField(additionalInfo, "error"),
 			FieldErrors: map[string][]string{},
 			RawBody:     marshalRaw(data),
 		},
-		TransactionID: stringField(data, "transactionId"),
+		TransactionID:    stringField(data, "transactionId"),
+		ErrorDescription: strictString(additionalInfo, "error_description"),
 	}
 }
 
@@ -132,6 +141,29 @@ func (p *RegisteredPayment) IPKSeF() string { return p.ipksef }
 // CardRecurringAlias returns the stored-card alias registered with this payment, if any.
 func (p *RegisteredPayment) CardRecurringAlias() string {
 	return stringField(objectField(p.raw, "additionalInfo"), "card_recurring_alias")
+}
+
+// RecurringAlias returns the alias of the recurring payment registered with this
+// payment (RegisterPaymentRequest.RecurringRegistration), empty when the response
+// carries none.
+func (p *RegisteredPayment) RecurringAlias() string {
+	return strictString(p.recurringRegistration(), "alias")
+}
+
+// RecurringMethods returns the payment methods of the recurring payment
+// registered with this payment, e.g. [blik].
+func (p *RegisteredPayment) RecurringMethods() []string {
+	methods := []string{}
+	for _, method := range arrayField(p.recurringRegistration(), "methods") {
+		if text, ok := method.(string); ok {
+			methods = append(methods, text)
+		}
+	}
+	return methods
+}
+
+func (p *RegisteredPayment) recurringRegistration() map[string]any {
+	return phpObject(phpObject(p.raw["additionalInfo"])["recurring_registration"])
 }
 
 // Raw returns the decoded response body.

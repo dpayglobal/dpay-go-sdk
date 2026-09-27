@@ -20,7 +20,7 @@ func (s *PayoutService) Details(ctx context.Context, withdrawID int64, opts ...T
 		body.Set("timestamp", resolveTimestamp(opts))
 	}
 	body.Set("withdraw_id", withdrawID)
-	body.Set("checksum", s.client.checksum.OrderedBody(body.Values()))
+	body.Set("checksum", s.client.checksum.OrderedBody(body))
 
 	data, err := s.client.postJSONObject(ctx, hostPanel, "/api/v1/pbl/withdraws/details", body)
 	if err != nil {

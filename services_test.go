@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,10 +30,7 @@ func recordingServer(t *testing.T, status int, response string) (*httptest.Serve
 	body := new(string)
 	path := new(string)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		buffer := make([]byte, r.ContentLength)
-		if r.ContentLength > 0 {
-			r.Body.Read(buffer)
-		}
+		buffer, _ := io.ReadAll(r.Body)
 		*body, *path = string(buffer), r.URL.EscapedPath()
 		w.WriteHeader(status)
 		w.Write([]byte(response))
@@ -139,10 +137,10 @@ func TestRegisterRequestChannelFlagsAreIntegers(t *testing.T) {
 }
 
 func TestRegisterRequestNestedObjects(t *testing.T) {
-	value := PLN(1000)
 	request := minimalRequest()
-	request.RegisterBlikRecurringAlias = &BlikRecurringRegistration{
-		Label: "Subskrypcja", Model: BlikRecurringModelAutomatic, Frequency: "1M", Value: &value,
+	request.BlikCode = String("123456")
+	request.RecurringRegistration = &RecurringRegistration{
+		Label: "Subskrypcja", Model: RecurringModelOnDemand, TermsURL: "https://shop.test/regulamin", Alias: String("SUB-1"),
 	}
 	request.Payout = &PayoutInstruction{
 		FeeMode:   PayoutFeeModeGross,
@@ -160,7 +158,7 @@ func TestRegisterRequestNestedObjects(t *testing.T) {
 	}
 	got := bodyJSON(t, body)
 	for _, fragment := range []string{
-		`"register_blik_recurring_alias":{"label":"Subskrypcja","type":"PAYID","model":"A","frequency":"1M","value":"10.00"}`,
+		`"recurring_registration":{"label":"Subskrypcja","alias":"SUB-1","model":"O","terms_url":"https://shop.test/regulamin"}`,
 		`"payout":{"fee_mode":"gross","positions":[{"iban":"PL61","title":"Wypłata 1","amount":10.5}]}`,
 		`"billing_address":{"street":"Testowa 1","city":"Warszawa"}`,
 		`"products":[{"name":"Produkt","price":29.99}]`,
@@ -230,7 +228,7 @@ func TestRegisterRequestMutualExclusions(t *testing.T) {
 	bad.BlikAlias = String("alias-1")
 	bad.RegisterBlikAlias = &BlikAliasRegistration{Label: "L", Type: BlikAliasTypeUID}
 	if err := bad.Validate(); err == nil ||
-		err.Error() != "dpay: blik_alias cannot be combined with blik_code or alias registration" {
+		err.Error() != "dpay: blik_alias cannot be combined with blik_code, alias registration or recurring payments" {
 		t.Fatalf("err = %v", err)
 	}
 

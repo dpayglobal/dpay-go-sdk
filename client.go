@@ -74,12 +74,16 @@ type Client struct {
 	Refunds *RefundService
 	// Banks lists the available banks.
 	Banks *BankService
-	// Blik manages BLIK aliases and recurring registrations.
+	// Blik manages BLIK OneClick aliases.
 	Blik *BlikService
 	// Cards runs server-to-server card operations.
 	Cards *CardService
 	// Payouts reads payout details.
 	Payouts *PayoutService
+	// Recurring reads, retries and cancels recurring payments.
+	Recurring *RecurringService
+	// Events reads the event history the webhooks deliver.
+	Events *EventService
 
 	service    string
 	checksum   wire.Checksum
@@ -121,6 +125,8 @@ func New(service, secretHash string, opts ...Option) (*Client, error) {
 	client.Blik = &BlikService{client: client}
 	client.Cards = &CardService{client: client}
 	client.Payouts = &PayoutService{client: client}
+	client.Recurring = &RecurringService{client: client}
+	client.Events = &EventService{client: client}
 	return client, nil
 }
 

@@ -26,7 +26,7 @@ func (s *BankService) ForService(ctx context.Context, opts ...TimestampOption) (
 	body := wire.NewBody()
 	body.Set("service", s.client.service)
 	body.Set("timestamp", resolveTimestamp(opts))
-	body.Set("checksum", s.client.checksum.OrderedBody(body.Values()))
+	body.Set("checksum", s.client.checksum.OrderedBody(body))
 
 	data, err := s.client.postJSONArray(ctx, hostPanel, "/api/v1/pbl/banks", body)
 	if err != nil {

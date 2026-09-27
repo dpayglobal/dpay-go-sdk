@@ -2,10 +2,13 @@
 Package dpay is the official Go SDK for the dpay.pl payments API.
 
 Create a client with the payment point name and secret hash from panel.dpay.pl,
-then use one of its six services:
+then use one of its eight services:
 
 	client, err := dpay.New("my_shop", "secret_hash")
 	payment, err := client.Payments.Register(ctx, request)
+
+Verify webhooks with VerifyWebhook (or a configured WebhookVerifier) on the raw
+request body, and IPN notifications with VerifyIPN.
 
 Optional request fields are pointers: nil omits the field, while dpay.Bool(false)
 sends false explicitly. Use dpay.String, dpay.Bool, dpay.Int and dpay.Int64 to

@@ -142,14 +142,56 @@ func (s *CardService) PreAuth(ctx context.Context, transactionID string, request
 	return s.post(ctx, transactionID, "/pay/card-pre-auth", request.toBody())
 }
 
-// Capture settles a pre-authorization. A nil amount captures the full amount.
-func (s *CardService) Capture(ctx context.Context, transactionID string, amount *Money) (*CardPaymentResult, error) {
-	return s.post(ctx, transactionID, "/capture", amountBody(amount))
+// CaptureOption sets an optional field of a card capture.
+type CaptureOption func(*captureOptions)
+
+type captureOptions struct {
+	webhook *WebhookTarget
 }
 
-// Cancel voids a pre-authorization. A nil amount cancels the full amount.
+// WithCaptureWebhook sends the payment.captured event of this capture also to
+// target, signed with the webhook secret of the service. It does not enter the
+// checksum and allows only WebhookEventTypePaymentCaptured.
+func WithCaptureWebhook(target WebhookTarget) CaptureOption {
+	return func(options *captureOptions) { options.webhook = &target }
+}
+
+// Capture settles a pre-authorization; partial captures are allowed up to the
+// authorized amount. The request is signed with
+// sha256(capture|service|transaction_id|amount|hash).
+func (s *CardService) Capture(ctx context.Context, transactionID string, amount Money, opts ...CaptureOption) (*CardPaymentResult, error) {
+	options := &captureOptions{}
+	for _, apply := range opts {
+		apply(options)
+	}
+
+	body := wire.NewBody()
+	body.Set("service", s.client.service)
+	body.Set("amount", moneyFloat(amount))
+	if options.webhook != nil {
+		if err := options.webhook.validateFor(CaptureEventTypes(), "a card capture"); err != nil {
+			return nil, err
+		}
+		body.Set("webhook", options.webhook.toBody())
+	}
+	body.Set("checksum", s.client.checksum.Operation("capture", s.client.service, transactionID, amount.String()))
+	return s.post(ctx, transactionID, "/capture", body)
+}
+
+// Cancel voids a pre-authorization; a nil amount cancels the whole uncaptured
+// remainder. The request is signed with
+// sha256(cancellation|service|transaction_id|amount|hash), with an empty amount
+// segment for a nil amount.
 func (s *CardService) Cancel(ctx context.Context, transactionID string, amount *Money) (*CardPaymentResult, error) {
-	return s.post(ctx, transactionID, "/cancellation", amountBody(amount))
+	body := wire.NewBody()
+	body.Set("service", s.client.service)
+	decimal := ""
+	if amount != nil {
+		body.Set("amount", moneyFloat(*amount))
+		decimal = amount.String()
+	}
+	body.Set("checksum", s.client.checksum.Operation("cancellation", s.client.service, transactionID, decimal))
+	return s.post(ctx, transactionID, "/cancellation", body)
 }
 
 // GooglePay charges a Google Pay token.
@@ -166,14 +208,6 @@ func (s *CardService) ApplePay(ctx context.Context, transactionID string, reques
 		return nil, err
 	}
 	return s.post(ctx, transactionID, "/pay/apple-pay", request.toBody())
-}
-
-func amountBody(amount *Money) *wire.Body {
-	body := wire.NewBody()
-	if amount != nil {
-		body.Set("amount", moneyFloat(*amount))
-	}
-	return body
 }
 
 func (s *CardService) post(ctx context.Context, transactionID, suffix string, body *wire.Body) (*CardPaymentResult, error) {

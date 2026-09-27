@@ -38,8 +38,9 @@ func TestNewWiresServices(t *testing.T) {
 		t.Fatal(err)
 	}
 	if client.Payments == nil || client.Refunds == nil || client.Banks == nil ||
-		client.Blik == nil || client.Cards == nil || client.Payouts == nil {
-		t.Fatal("all six services must be wired")
+		client.Blik == nil || client.Cards == nil || client.Payouts == nil ||
+		client.Recurring == nil || client.Events == nil {
+		t.Fatal("all eight services must be wired")
 	}
 	if client.Service() != "svc" {
 		t.Fatalf("Service() = %q", client.Service())

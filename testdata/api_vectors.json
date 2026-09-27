@@ -1,0 +1,167 @@
+{
+  "_comment": "Wspólne wektory testowe SDK dpay 0.2.0 - dane syntetyczne (to nie są klucze dpay). Źródło: kod managera 28.09.2026.",
+  "service": "sdk-test-service",
+  "secret_hash": "sdk-test-hash-0001",
+  "transaction_id": "A75AEBB4-4B89-4834-AD43-EF442C133769",
+  "secret_second": [
+    {
+      "name": "register_with_ipn",
+      "fields": [
+        "10.00",
+        "https://shop.example/ok",
+        "https://shop.example/fail",
+        "https://shop.example/ipn"
+      ],
+      "checksum": "0a163ad60b5d2fd09eacce0032cc4d584e707c457051d2c4365b320dc340bc28"
+    },
+    {
+      "name": "register_without_ipn",
+      "fields": [
+        "10.00",
+        "https://shop.example/ok",
+        "https://shop.example/fail",
+        ""
+      ],
+      "checksum": "eaf1781733e194b7afaa1bcba53ca9f4f0ade90c5eab506d1378f0438d013d6c"
+    },
+    {
+      "name": "register_recurring_value_0_without_ipn",
+      "fields": [
+        "0.00",
+        "https://shop.example/ok",
+        "https://shop.example/fail",
+        ""
+      ],
+      "checksum": "b5dbca75c515bc76094dba4d2853493bf050bfcd47c25bc899361884080f3544"
+    },
+    {
+      "name": "recurring_charge",
+      "fields": [
+        "49.99",
+        "https://shop.example/ok",
+        "https://shop.example/fail",
+        "https://shop.example/ipn",
+        "SUB-0001"
+      ],
+      "checksum": "96b80b9bceab99b92228bc8bd793b432b1594484ac45dc2715d2ebd542f3b2aa"
+    },
+    {
+      "name": "recurring_charge_without_ipn",
+      "fields": [
+        "49.99",
+        "https://shop.example/ok",
+        "https://shop.example/fail",
+        "",
+        "SUB-0001"
+      ],
+      "checksum": "b521018f255bab928187d73802d2dd79c48dda4c6574d1f57e7395cda70a8e5c"
+    },
+    {
+      "name": "recurring_status",
+      "fields": [
+        "SUB-0001"
+      ],
+      "checksum": "01e38925de1ceefbfbaffdf84a917f1c95123403a0e51a7d74cb81f227c3e3ef"
+    },
+    {
+      "name": "recurring_cancel",
+      "fields": [
+        "SUB-0001",
+        "cancel"
+      ],
+      "checksum": "848c236b3060a94c2ed14c150de154ee7aa2d64ec3682771259c30321cadf82b"
+    },
+    {
+      "name": "recurring_retry",
+      "fields": [
+        "A75AEBB4-4B89-4834-AD43-EF442C133769"
+      ],
+      "checksum": "00bceec5fca2ee4c3a1737156df376441d225790eb61ca47fcbe9cba7243a77d"
+    },
+    {
+      "name": "blik_aliases_uid",
+      "fields": [
+        "DPAY.UID.1.abcd1234"
+      ],
+      "checksum": "f3ab74b584c29e0a1d66c8037a962e0e52e74e070c092ee2437e2254544703f5"
+    },
+    {
+      "name": "events_list",
+      "fields": [
+        "1790503500"
+      ],
+      "checksum": "390cb30baacbc92bf2244d049f4b500937c6209446dd2fd79829d7975321abf0"
+    }
+  ],
+  "operation": [
+    {
+      "name": "capture_59_99",
+      "operation": "capture",
+      "amount": "59.99",
+      "checksum": "aaa4fc0ed41bf48f4b0b69c0e22a8ca3027927c0190d1bef8d6e5d8ada77f734"
+    },
+    {
+      "name": "capture_100",
+      "operation": "capture",
+      "amount": "100.00",
+      "checksum": "df1d1502207cc2abfa70cc3c5ab91e9aea0a824103819b196f043b996aa1bc53"
+    },
+    {
+      "name": "cancellation_full",
+      "operation": "cancellation",
+      "amount": null,
+      "checksum": "af7bbcde7ced979acdce5ff4ce97ea29c2175851ca86a6556c5b273a4865eef5"
+    },
+    {
+      "name": "cancellation_30",
+      "operation": "cancellation",
+      "amount": "30.00",
+      "checksum": "8252cff472cd1d8560a6d5d04e04a6c55be3145475317360b7028404ad6f6587"
+    }
+  ],
+  "ordered_body": [
+    {
+      "name": "refund_full",
+      "body": {
+        "service": "sdk-test-service",
+        "transaction_id": "A75AEBB4-4B89-4834-AD43-EF442C133769"
+      },
+      "checksum": "dbae59367823ac7e27dcb76ab1e093eedb5b352dc1dd122036dba0f7a2642d5c"
+    },
+    {
+      "name": "refund_partial",
+      "body": {
+        "service": "sdk-test-service",
+        "transaction_id": "A75AEBB4-4B89-4834-AD43-EF442C133769",
+        "value": "15.00"
+      },
+      "checksum": "fa799222cf8abeaaedc2878f0ad79440e0f68a5c6bbd31198ecf3d0b8e780470"
+    },
+    {
+      "name": "refund_with_reason_and_webhook",
+      "body": {
+        "service": "sdk-test-service",
+        "transaction_id": "A75AEBB4-4B89-4834-AD43-EF442C133769",
+        "value": "15.00",
+        "reason": "Zwrot",
+        "webhook": {
+          "url": "https://shop.example/webhooks/refunds",
+          "events": [
+            "refund.succeeded",
+            "refund.failed"
+          ]
+        }
+      },
+      "checksum": "53620f0ea6b46723866a46f2f0059c79cbe080e59d4f134508546be3fa08dacf"
+    }
+  ],
+  "webhook": {
+    "secret": "whsec_ZHBheS1zZGstc3ludGhldGljLXRlc3Qtc2VjcmV0ISE=",
+    "old_secret": "whsec_ZHBheS1zZGstc3ludGhldGljLW9sZC1zZWNyZXQtMDI=",
+    "id": "evt_01k6a8q2m4pz7h8c3v5n9t2x6y",
+    "timestamp": 1790503500,
+    "body": "{\"id\":\"evt_01k6a8q2m4pz7h8c3v5n9t2x6y\",\"type\":\"payment.succeeded\",\"data\":{\"object\":{\"object\":\"payment\",\"id\":\"A75AEBB4-4B89-4834-AD43-EF442C133769\",\"amount\":1000}}}",
+    "signature": "v1,c+mTZVkrtVb4PwbraXxqRxriIZK/jhSz7mRwwA8pX+U=",
+    "rotation_signature": "v1,c+mTZVkrtVb4PwbraXxqRxriIZK/jhSz7mRwwA8pX+U= v1,azvHQTzH+V7t5BuBZJWigdCAExALzrYn6bdMHpPdP9g="
+  }
+}
