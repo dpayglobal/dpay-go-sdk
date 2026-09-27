@@ -172,22 +172,6 @@
             }
         ]
     },
-    "blik_recurring": {
-        "value": "payid-1",
-        "type": "PAYID",
-        "status": "ACTIVE",
-        "is_active": true,
-        "registration": {
-            "model": "A",
-            "frequency": "1M",
-            "limit_amt": 5000,
-            "tot_limit_amt": 60000,
-            "is_limit_amt_fixed": true,
-            "init_date": "2026-08-01",
-            "label": "Subskrypcja",
-            "registered_at": "2026-07-01 12:00:00"
-        }
-    },
     "card_form": {
         "redirect_type": "FORM",
         "is_success": false,
@@ -243,5 +227,103 @@
             ],
             "eea": true
         }
+    },
+    "registered_recurring": {
+        "transaction_id": "tx-rec",
+        "message": "Internal processing",
+        "redirect_url": null,
+        "is_paid": false,
+        "is_inline": true,
+        "ipksef": null,
+        "card_recurring_alias": null,
+        "recurring_alias": "SUB-1",
+        "recurring_methods": [
+            "blik"
+        ]
+    },
+    "recurring_status": {
+        "alias": "payid-1",
+        "method": "blik",
+        "status": "ACTIVE",
+        "is_active": true,
+        "expiration_date": "2027-01-01",
+        "registration": {
+            "transaction_id": "tx-2",
+            "label": "Subskrypcja",
+            "model": "A",
+            "frequency": "1M",
+            "limit_amt": 5000,
+            "tot_limit_amt": 60000,
+            "is_limit_amt_fixed": true,
+            "init_date": "2026-08-01",
+            "terms_url": "https://shop.test/regulamin",
+            "terms_version": "2026-09",
+            "registered_at": "2026-07-01T12:00:00+02:00"
+        }
+    },
+    "recurring_status_sparse": {
+        "alias": "SUB-2",
+        "method": null,
+        "status": "UNREGISTERED",
+        "is_active": false,
+        "expiration_date": null,
+        "registration": {
+            "transaction_id": null,
+            "label": null,
+            "model": null,
+            "frequency": null,
+            "limit_amt": 100,
+            "tot_limit_amt": null,
+            "is_limit_amt_fixed": null,
+            "init_date": null,
+            "terms_url": null,
+            "terms_version": null,
+            "registered_at": null
+        }
+    },
+    "recurring_retry_pending": {
+        "transaction_id": "tx-4",
+        "status": "pending",
+        "is_pending": true,
+        "is_failed": false,
+        "count": 1,
+        "error_code": null,
+        "error_description": null
+    },
+    "recurring_retry_failed": {
+        "transaction_id": "tx-5",
+        "status": "failed",
+        "is_pending": false,
+        "is_failed": true,
+        "count": 3,
+        "error_code": "INSUFFICIENT_FUNDS",
+        "error_description": "IssId: 1"
+    },
+    "webhook_event": {
+        "id": "evt_01k6a8q2m4pz7h8c3v5n9t2x6y",
+        "type": "payment.succeeded",
+        "api_version": "2026-10-01",
+        "created": "2026-09-27T10:05:00Z",
+        "livemode": true,
+        "service": "test_service",
+        "merchant_ref": null,
+        "object_type": "payment",
+        "object": {
+            "object": "payment",
+            "id": "tx-1",
+            "amount": 2999,
+            "currency": "PLN"
+        }
+    },
+    "webhook_event_sparse": {
+        "id": "",
+        "type": "",
+        "api_version": null,
+        "created": null,
+        "livemode": false,
+        "service": null,
+        "merchant_ref": null,
+        "object_type": null,
+        "object": []
     }
 }

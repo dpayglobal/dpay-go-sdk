@@ -3,6 +3,7 @@ package dpay
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"testing"
 )
 
@@ -116,7 +117,7 @@ func TestResponseParityWithPHPSDK(t *testing.T) {
 		}
 	}
 
-	for _, key := range []string{"registered_redirect", "registered_paid", "registered_inline"} {
+	for _, key := range []string{"registered_redirect", "registered_paid", "registered_inline", "registered_recurring"} {
 		payment := registeredPaymentFromAPI(fixtures[key].(map[string]any))
 		want := golden[key].(map[string]any)
 		checked += compare(t, key+".transaction_id", payment.TransactionID(), want["transaction_id"])
@@ -126,6 +127,9 @@ func TestResponseParityWithPHPSDK(t *testing.T) {
 		checked += compare(t, key+".is_inline", payment.IsInlineProcessing(), want["is_inline"])
 		checked += compare(t, key+".ipksef", payment.IPKSeF(), want["ipksef"])
 		checked += compare(t, key+".card_recurring_alias", payment.CardRecurringAlias(), want["card_recurring_alias"])
+		// the 0.1.x entries predate these getters: absent means null and [] in PHP
+		checked += compare(t, key+".recurring_alias", payment.RecurringAlias(), want["recurring_alias"])
+		checked += compareStrings(t, key+".recurring_methods", payment.RecurringMethods(), want["recurring_methods"])
 	}
 
 	for _, key := range []string{"refund_accepted", "refund_rejected"} {
@@ -211,20 +215,8 @@ func TestResponseParityWithPHPSDK(t *testing.T) {
 		checked += compare(t, "blik_alias.app.label", alias.Apps()[index].Label(), wantApp["label"])
 	}
 
-	recurring := blikRecurringStatusFromAPI(fixtures["blik_recurring"].(map[string]any))
-	wantRecurring := golden["blik_recurring"].(map[string]any)
-	checked += compare(t, "blik_recurring.value", recurring.Value(), wantRecurring["value"])
-	checked += compare(t, "blik_recurring.type", string(recurring.Type()), wantRecurring["type"])
-	checked += compare(t, "blik_recurring.is_active", recurring.IsActive(), wantRecurring["is_active"])
-	wantRegistration := wantRecurring["registration"].(map[string]any)
-	registration := recurring.Registration()
-	checked += compare(t, "blik_recurring.model", registration.Model(), wantRegistration["model"])
-	checked += compare(t, "blik_recurring.frequency", registration.Frequency(), wantRegistration["frequency"])
-	checked += comparePtrInt(t, "blik_recurring.limit_amt", registration.LimitAmt(), wantRegistration["limit_amt"])
-	checked += comparePtrInt(t, "blik_recurring.tot_limit_amt", registration.TotLimitAmt(), wantRegistration["tot_limit_amt"])
-	checked += compare(t, "blik_recurring.init_date", registration.InitDate(), wantRegistration["init_date"])
-	checked += compare(t, "blik_recurring.label", registration.Label(), wantRegistration["label"])
-	checked += compare(t, "blik_recurring.registered_at", registration.RegisteredAt(), wantRegistration["registered_at"])
+	checked += compareRecurringParity(t, fixtures, golden)
+	checked += compareWebhookEventParity(t, fixtures, golden)
 
 	for _, key := range []string{"card_form", "card_url", "card_bad_base64", "card_dcc"} {
 		result := cardPaymentResultFromAPI(fixtures[key].(map[string]any))
@@ -263,4 +255,124 @@ func TestResponseParityWithPHPSDK(t *testing.T) {
 	}
 
 	t.Logf("matching response values: %d", checked)
+}
+
+func comparePtrBool(t *testing.T, name string, got *bool, want any) int {
+	t.Helper()
+	if want == nil {
+		if got != nil {
+			t.Errorf("%s = %v, want nil", name, *got)
+			return 0
+		}
+		return 1
+	}
+	if got == nil {
+		t.Errorf("%s = nil, want %v", name, want)
+		return 0
+	}
+	return compare(t, name, *got, want)
+}
+
+func compareStrings(t *testing.T, name string, got []string, want any) int {
+	t.Helper()
+	wantList := toSlice(want)
+	if len(got) != len(wantList) {
+		t.Errorf("%s = %v, want %v", name, got, want)
+		return 0
+	}
+	for index, value := range wantList {
+		if got[index] != value {
+			t.Errorf("%s[%d] = %q, want %v", name, index, got[index], value)
+			return 0
+		}
+	}
+	return 1
+}
+
+// compareJSON compares decoded JSON values; PHP encodes an empty array as [],
+// which stands for the empty object on the Go side.
+func compareJSON(t *testing.T, name string, got map[string]any, want any) int {
+	t.Helper()
+	if list, ok := want.([]any); ok && len(list) == 0 {
+		want = map[string]any{}
+	}
+	if !reflect.DeepEqual(any(got), want) {
+		t.Errorf("%s = %#v, want %#v", name, got, want)
+		return 0
+	}
+	return 1
+}
+
+func compareRecurringParity(t *testing.T, fixtures, golden map[string]any) int {
+	t.Helper()
+	checked := 0
+	for _, key := range []string{"recurring_status", "recurring_status_sparse"} {
+		status := recurringStatusFromAPI(fixtures[key].(map[string]any))
+		want := golden[key].(map[string]any)
+		checked += compare(t, key+".alias", status.Alias(), want["alias"])
+		checked += compare(t, key+".method", status.Method(), want["method"])
+		checked += compare(t, key+".status", string(status.Status()), want["status"])
+		checked += compare(t, key+".is_active", status.IsActive(), want["is_active"])
+		checked += compare(t, key+".expiration_date", status.ExpirationDate(), want["expiration_date"])
+
+		wantRegistration, ok := want["registration"].(map[string]any)
+		registration := status.Registration()
+		if !ok {
+			if registration != nil {
+				t.Errorf("%s.registration present, want nil", key)
+			}
+			continue
+		}
+		if registration == nil {
+			t.Errorf("%s.registration = nil, want an object", key)
+			continue
+		}
+		checked += compare(t, key+".transaction_id", registration.TransactionID(), wantRegistration["transaction_id"])
+		checked += compare(t, key+".label", registration.Label(), wantRegistration["label"])
+		checked += compare(t, key+".model", string(registration.Model()), wantRegistration["model"])
+		checked += compare(t, key+".frequency", registration.Frequency(), wantRegistration["frequency"])
+		checked += comparePtrInt(t, key+".limit_amt", registration.LimitAmt(), wantRegistration["limit_amt"])
+		checked += comparePtrInt(t, key+".tot_limit_amt", registration.TotLimitAmt(), wantRegistration["tot_limit_amt"])
+		checked += comparePtrBool(t, key+".is_limit_amt_fixed", registration.IsLimitAmtFixed(), wantRegistration["is_limit_amt_fixed"])
+		checked += compare(t, key+".init_date", registration.InitDate(), wantRegistration["init_date"])
+		checked += compare(t, key+".terms_url", registration.TermsURL(), wantRegistration["terms_url"])
+		checked += compare(t, key+".terms_version", registration.TermsVersion(), wantRegistration["terms_version"])
+		checked += compare(t, key+".registered_at", registration.RegisteredAt(), wantRegistration["registered_at"])
+	}
+
+	for _, key := range []string{"recurring_retry_pending", "recurring_retry_failed"} {
+		retry := recurringRetryResultFromAPI(fixtures[key].(map[string]any))
+		want := golden[key].(map[string]any)
+		checked += compare(t, key+".transaction_id", retry.TransactionID(), want["transaction_id"])
+		checked += compare(t, key+".status", string(retry.Status()), want["status"])
+		checked += compare(t, key+".is_pending", retry.IsPending(), want["is_pending"])
+		checked += compare(t, key+".is_failed", retry.IsFailed(), want["is_failed"])
+		checked += comparePtrInt(t, key+".count", retry.Count(), want["count"])
+		checked += compare(t, key+".error_code", retry.ErrorCode(), want["error_code"])
+		checked += compare(t, key+".error_description", retry.ErrorDescription(), want["error_description"])
+	}
+	return checked
+}
+
+func compareWebhookEventParity(t *testing.T, fixtures, golden map[string]any) int {
+	t.Helper()
+	checked := 0
+	for _, key := range []string{"webhook_event", "webhook_event_sparse"} {
+		event, ok := webhookEventFromJSON(fixtures[key])
+		if !ok {
+			t.Errorf("%s is not an event", key)
+			continue
+		}
+		want := golden[key].(map[string]any)
+		checked += compare(t, key+".id", event.ID(), want["id"])
+		checked += compare(t, key+".type", string(event.Type()), want["type"])
+		checked += compare(t, key+".api_version", event.APIVersion(), want["api_version"])
+		checked += compare(t, key+".created", event.Created(), want["created"])
+		checked += compare(t, key+".livemode", event.IsLivemode(), want["livemode"])
+		checked += compare(t, key+".service", event.Service(), want["service"])
+		checked += compare(t, key+".merchant_ref", event.MerchantRef(), want["merchant_ref"])
+		checked += compare(t, key+".object_type", event.ObjectType(), want["object_type"])
+		checked += compareJSON(t, key+".object", event.Object(), want["object"])
+	}
+	return checked
 }

@@ -1,6 +1,8 @@
 package wire
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"testing"
 
 	"github.com/dpayglobal/dpay-go-sdk/internal/php"
@@ -139,15 +141,66 @@ func TestSecretSecondUsesPHPStringConversion(t *testing.T) {
 	}
 }
 
+func bodyOf(pairs ...any) *Body {
+	body := NewBody()
+	for index := 0; index < len(pairs); index += 2 {
+		body.Set(pairs[index].(string), pairs[index+1])
+	}
+	return body
+}
+
+func sha256Hex(payload string) string {
+	digest := sha256.Sum256([]byte(payload))
+	return hex.EncodeToString(digest[:])
+}
+
 func TestOrderedBody(t *testing.T) {
 	checksum := NewChecksum("secret_hash")
-	got := checksum.OrderedBody([]any{"test_service", "tx-1"})
-	reordered := checksum.OrderedBody([]any{"tx-1", "test_service"})
+	got := checksum.OrderedBody(bodyOf("service", "test_service", "transaction_id", "tx-1"))
+	reordered := checksum.OrderedBody(bodyOf("transaction_id", "tx-1", "service", "test_service"))
 	if got == reordered {
 		t.Fatal("value order must change the checksum")
 	}
-	if len(got) != 64 {
-		t.Fatalf("length = %d", len(got))
+	if got != sha256Hex("test_service|tx-1|secret_hash") {
+		t.Fatalf("got %s", got)
+	}
+}
+
+func TestOrderedBodySkipsChecksumAndCastsLikeTheAPI(t *testing.T) {
+	body := bodyOf("x", "a", "checksum", "ignored", "y", true, "z", nil, "f", false, "w", bodyOf("v", "b"))
+	if got, want := NewChecksum("h").OrderedBody(body), sha256Hex("a|1|||b|h"); got != want {
+		t.Fatalf("got %s, want %s", got, want)
+	}
+}
+
+func TestOrderedBodyFlattensNestedValuesInTheOrderSent(t *testing.T) {
+	webhook := bodyOf("url", "https://shop.example/webhooks/refunds", "events", []string{"refund.succeeded", "refund.failed"})
+	body := bodyOf("service", "s", "transaction_id", "tx", "value", "15.00", "reason", "Zwrot", "webhook", webhook)
+	want := sha256Hex("s|tx|15.00|Zwrot|https://shop.example/webhooks/refunds|refund.succeeded|refund.failed|h")
+	if got := NewChecksum("h").OrderedBody(body); got != want {
+		t.Fatalf("got %s, want %s", got, want)
+	}
+
+	type label string
+	nested := bodyOf("list", []any{"a", []any{int64(1), 2.5}}, "typed", []label{"x", "y"}, "map", map[string]any{"b": "2", "a": "1"}, "none", (*Body)(nil))
+	if got, want := NewChecksum("h").OrderedBody(nested), sha256Hex("a|1|2.5|x|y|1|2||h"); got != want {
+		t.Fatalf("got %s, want %s", got, want)
+	}
+}
+
+func TestOrderedBodyEmpty(t *testing.T) {
+	if got, want := NewChecksum("h").OrderedBody(NewBody()), sha256Hex("|h"); got != want {
+		t.Fatalf("got %s, want %s", got, want)
+	}
+}
+
+func TestOperation(t *testing.T) {
+	checksum := NewChecksum("hash")
+	if got, want := checksum.Operation("capture", "svc", "TX-1", "59.99"), sha256Hex("capture|svc|TX-1|59.99|hash"); got != want {
+		t.Fatalf("capture = %s, want %s", got, want)
+	}
+	if got, want := checksum.Operation("cancellation", "svc", "TX-1", ""), sha256Hex("cancellation|svc|TX-1||hash"); got != want {
+		t.Fatalf("cancellation = %s, want %s", got, want)
 	}
 }
 

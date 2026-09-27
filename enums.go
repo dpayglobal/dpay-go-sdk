@@ -3,14 +3,14 @@ package dpay
 // TransactionType selects the payment flow a registration starts.
 type TransactionType string
 
-// Transaction types accepted by payments/register.
+// Transaction types accepted by payments/register. Recurring payments use
+// TransactionTypeTransfers with RegisterPaymentRequest.RecurringRegistration or
+// RecurringAlias; the API rejects blik_recurring and bizum_direct.
 const (
 	TransactionTypeTransfers     TransactionType = "transfers"
 	TransactionTypeDCBGateway    TransactionType = "dcb_gateway"
 	TransactionTypeCardAuth      TransactionType = "card_auth"
 	TransactionTypeMBWayDirect   TransactionType = "mb_way_direct"
-	TransactionTypeBizumDirect   TransactionType = "bizum_direct"
-	TransactionTypeBlikRecurring TransactionType = "blik_recurring"
 	TransactionTypeCardRecurring TransactionType = "card_recurring"
 )
 
@@ -18,8 +18,7 @@ const (
 func (t TransactionType) Valid() bool {
 	switch t {
 	case TransactionTypeTransfers, TransactionTypeDCBGateway, TransactionTypeCardAuth,
-		TransactionTypeMBWayDirect, TransactionTypeBizumDirect,
-		TransactionTypeBlikRecurring, TransactionTypeCardRecurring:
+		TransactionTypeMBWayDirect, TransactionTypeCardRecurring:
 		return true
 	}
 	return false
@@ -47,33 +46,121 @@ func (s TransactionStatus) Valid() bool {
 	return false
 }
 
-// BlikAliasType distinguishes a device alias from a PayID alias.
+// BlikAliasType is the type of a BLIK OneClick alias. Recurring payments (PAYID
+// aliases) are handled by Client.Recurring.
 type BlikAliasType string
 
 // BLIK alias types.
 const (
-	BlikAliasTypeUID   BlikAliasType = "UID"
-	BlikAliasTypePayID BlikAliasType = "PAYID"
+	BlikAliasTypeUID BlikAliasType = "UID"
 )
 
 // Valid reports whether the value is one of the known alias types.
 func (t BlikAliasType) Valid() bool {
-	return t == BlikAliasTypeUID || t == BlikAliasTypePayID
+	return t == BlikAliasTypeUID
 }
 
-// BlikRecurringModel is the mandate model of a BLIK recurring registration.
-type BlikRecurringModel string
+// RecurringModel decides who approves the charges of a recurring payment.
+type RecurringModel string
 
-// BLIK recurring models: automatic, manual and on-demand.
+// Recurring payment models.
 const (
-	BlikRecurringModelAutomatic BlikRecurringModel = "A"
-	BlikRecurringModelManual    BlikRecurringModel = "M"
-	BlikRecurringModelOnDemand  BlikRecurringModel = "O"
+	// RecurringModelAutomatic (A): fixed amount, frequency, total limit, start and
+	// expiry date, all required; the customer's bank approves matching charges.
+	RecurringModelAutomatic RecurringModel = "A"
+	// RecurringModelManual (M): the customer confirms every charge in the banking
+	// app; frequency and limits are optional.
+	RecurringModelManual RecurringModel = "M"
+	// RecurringModelOnDemand (O): no frequency or limits, the merchant charges any
+	// amount within the active ranges of the service (at most 2000 PLN).
+	RecurringModelOnDemand RecurringModel = "O"
 )
 
 // Valid reports whether the value is one of the known recurring models.
-func (m BlikRecurringModel) Valid() bool {
-	return m == BlikRecurringModelAutomatic || m == BlikRecurringModelManual || m == BlikRecurringModelOnDemand
+func (m RecurringModel) Valid() bool {
+	return m == RecurringModelAutomatic || m == RecurringModelManual || m == RecurringModelOnDemand
+}
+
+// RecurringMethod is a payment method of a recurring payment.
+type RecurringMethod string
+
+// Recurring payment methods.
+const (
+	RecurringMethodBlik RecurringMethod = "blik"
+)
+
+// Valid reports whether the value is one of the known recurring methods.
+func (m RecurringMethod) Valid() bool {
+	return m == RecurringMethodBlik
+}
+
+// RecurringState is the state of a recurring payment, reported by
+// Recurring.Status and returned by Recurring.Cancel.
+type RecurringState string
+
+// Recurring payment states. IN_PROGRESS is a state of the registering or
+// charging transaction, not of the recurring payment.
+const (
+	RecurringStateActive RecurringState = "ACTIVE"
+	// RecurringStateInactive means the registration waits for the customer.
+	RecurringStateInactive     RecurringState = "INACTIVE"
+	RecurringStateUnregistered RecurringState = "UNREGISTERED"
+	RecurringStateExpired      RecurringState = "EXPIRED"
+	RecurringStateDeclined     RecurringState = "DECLINED"
+)
+
+// Valid reports whether the value is one of the known recurring states.
+func (s RecurringState) Valid() bool {
+	switch s {
+	case RecurringStateActive, RecurringStateInactive, RecurringStateUnregistered,
+		RecurringStateExpired, RecurringStateDeclined:
+		return true
+	}
+	return false
+}
+
+// RecurringRetryStatus is the outcome of retrying a declined recurring charge.
+type RecurringRetryStatus string
+
+// Recurring retry statuses.
+const (
+	// RecurringRetryStatusPending: the retry went to the bank; the outcome comes
+	// like for a charge (webhook, IPN, transaction details).
+	RecurringRetryStatusPending RecurringRetryStatus = "pending"
+	// RecurringRetryStatusFailed: the bank declined the retry at once.
+	RecurringRetryStatusFailed  RecurringRetryStatus = "failed"
+	RecurringRetryStatusSuccess RecurringRetryStatus = "success"
+)
+
+// Valid reports whether the value is one of the known retry statuses.
+func (s RecurringRetryStatus) Valid() bool {
+	return s == RecurringRetryStatusPending || s == RecurringRetryStatusFailed || s == RecurringRetryStatusSuccess
+}
+
+// WebhookEventType is the type of a webhook event (the "type" field of the envelope).
+type WebhookEventType string
+
+// Webhook event types. MerchantEventTypes lists the ones a merchant endpoint can
+// subscribe to and the Events API can filter on.
+const (
+	WebhookEventTypePaymentSucceeded          WebhookEventType = "payment.succeeded"
+	WebhookEventTypePaymentFailed             WebhookEventType = "payment.failed"
+	WebhookEventTypePaymentCaptured           WebhookEventType = "payment.captured"
+	WebhookEventTypeRefundSucceeded           WebhookEventType = "refund.succeeded"
+	WebhookEventTypeRefundFailed              WebhookEventType = "refund.failed"
+	WebhookEventTypeRecurringPaymentActivated WebhookEventType = "recurring_payment.activated"
+	WebhookEventTypeRecurringPaymentCanceled  WebhookEventType = "recurring_payment.canceled"
+	WebhookEventTypeRecurringPaymentExpired   WebhookEventType = "recurring_payment.expired"
+	WebhookEventTypeRecurringPaymentDeclined  WebhookEventType = "recurring_payment.declined"
+	WebhookEventTypePayoutPaid                WebhookEventType = "payout.paid"
+	WebhookEventTypePayoutFailed              WebhookEventType = "payout.failed"
+	// WebhookEventTypeWebhookTest is sent by the test button of an endpoint in the panel.
+	WebhookEventTypeWebhookTest WebhookEventType = "webhook.test"
+)
+
+// Valid reports whether the value is one of the known event types.
+func (t WebhookEventType) Valid() bool {
+	return t == WebhookEventTypeWebhookTest || containsEventType(MerchantEventTypes(), t)
 }
 
 // RedirectType tells the merchant what to do with a card payment result.
@@ -174,8 +261,10 @@ type IPNType string
 // IPN types.
 const (
 	IPNTypeTransfer IPNType = "transfer"
-	IPNTypeCapture  IPNType = "capture"
-	IPNTypeDCB      IPNType = "dcb"
+	// Deprecated: dpay no longer sends capture IPNs - use the payment.captured
+	// webhook event (WebhookEventTypePaymentCaptured).
+	IPNTypeCapture IPNType = "capture"
+	IPNTypeDCB     IPNType = "dcb"
 )
 
 // Valid reports whether the value is one of the known IPN types.

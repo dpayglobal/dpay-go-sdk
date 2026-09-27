@@ -33,8 +33,16 @@ func TestReturnURLsValidate(t *testing.T) {
 	if err == nil || err.Error() != `dpay: Invalid success URL "not a url"` {
 		t.Fatalf("err = %v", err)
 	}
-	bad = ReturnURLs{Success: "https://a/ok", Fail: "https://a/fail", IPN: ""}
+	withoutIPN := ReturnURLs{Success: "https://a/ok", Fail: "https://a/fail"}
+	if err := withoutIPN.Validate(); err != nil {
+		t.Fatalf("the IPN URL is optional: %v", err)
+	}
+	bad = ReturnURLs{Success: "https://a/ok", Fail: "https://a/fail", IPN: "ipn"}
 	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "Invalid ipn URL") {
+		t.Fatalf("err = %v", err)
+	}
+	bad = ReturnURLs{Success: "https://a/ok"}
+	if err := bad.Validate(); err == nil || err.Error() != `dpay: Invalid fail URL ""` {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -183,61 +191,6 @@ func TestBlikAliasRegistrationBody(t *testing.T) {
 	}
 }
 
-func TestBlikRecurringRegistrationBody(t *testing.T) {
-	value := PLN(1000)
-	registration := BlikRecurringRegistration{
-		Label:          "Subskrypcja",
-		Model:          BlikRecurringModelAutomatic,
-		Frequency:      "1M",
-		Value:          &value,
-		LimitAmt:       Int(5000),
-		TotLimitAmt:    Int(60000),
-		LimitAmtFixed:  Bool(true),
-		ExpirationDate: String("2027-01-01"),
-		InitDate:       String("2026-08-01"),
-	}
-	if err := registration.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	want := `{"label":"Subskrypcja","type":"PAYID","model":"A","frequency":"1M","value":"10.00",` +
-		`"limit_amt":5000,"tot_limit_amt":60000,"is_limit_amt_fixed":true,` +
-		`"expiration_date":"2027-01-01","init_date":"2026-08-01"}`
-	if got := bodyJSON(t, registration.toBody()); got != want {
-		t.Fatalf("toBody() = %s\nwant       = %s", got, want)
-	}
-}
-
-func TestBlikRecurringRegistrationValidate(t *testing.T) {
-	base := BlikRecurringRegistration{Label: "L", Model: BlikRecurringModelAutomatic, Frequency: "1M"}
-	if err := base.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	bad := base
-	bad.Model = "X"
-	if err := bad.Validate(); err == nil || err.Error() != `dpay: Invalid recurring model "X"` {
-		t.Fatalf("err = %v", err)
-	}
-	for _, frequency := range []string{"0D", "1X", "1000D", "M", "1MM"} {
-		bad = base
-		bad.Frequency = frequency
-		if err := bad.Validate(); err == nil {
-			t.Errorf("frequency %q must fail", frequency)
-		}
-	}
-	for _, frequency := range []string{"1D", "2W", "12M", "999Q", "1Y"} {
-		bad = base
-		bad.Frequency = frequency
-		if err := bad.Validate(); err != nil {
-			t.Errorf("frequency %q must pass: %v", frequency, err)
-		}
-	}
-	bad = base
-	bad.InitDate = String("2026/08/01")
-	if err := bad.Validate(); err == nil || err.Error() != `dpay: Date "2026/08/01" must be in YYYY-MM-DD format` {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 func TestCardRecurringRegistrationBody(t *testing.T) {
 	limit := PLN(50000)
 	total := PLN(600000)
@@ -274,8 +227,6 @@ func TestEnumWireValues(t *testing.T) {
 		string(TransactionTypeDCBGateway):        "dcb_gateway",
 		string(TransactionTypeCardAuth):          "card_auth",
 		string(TransactionTypeMBWayDirect):       "mb_way_direct",
-		string(TransactionTypeBizumDirect):       "bizum_direct",
-		string(TransactionTypeBlikRecurring):     "blik_recurring",
 		string(TransactionTypeCardRecurring):     "card_recurring",
 		string(TransactionStatusPaid):            "paid",
 		string(TransactionStatusCaptured):        "captured",
@@ -283,7 +234,6 @@ func TestEnumWireValues(t *testing.T) {
 		string(TransactionStatusProcessing):      "processing",
 		string(TransactionStatusExpired):         "expired",
 		string(BlikAliasTypeUID):                 "UID",
-		string(BlikAliasTypePayID):               "PAYID",
 		string(RedirectTypeSuccess):              "SUCCESS",
 		string(RedirectTypeForm):                 "FORM",
 		string(RedirectTypeURL):                  "URL",
@@ -298,9 +248,20 @@ func TestEnumWireValues(t *testing.T) {
 		string(CardRecurringOperationCharge):     "charge",
 		string(PayoutFeeModeNet):                 "net",
 		string(PayoutFeeModeGross):               "gross",
-		string(BlikRecurringModelAutomatic):      "A",
-		string(BlikRecurringModelManual):         "M",
-		string(BlikRecurringModelOnDemand):       "O",
+		string(RecurringModelAutomatic):          "A",
+		string(RecurringModelManual):             "M",
+		string(RecurringModelOnDemand):           "O",
+		string(RecurringMethodBlik):              "blik",
+		string(RecurringStateActive):             "ACTIVE",
+		string(RecurringStateInactive):           "INACTIVE",
+		string(RecurringStateUnregistered):       "UNREGISTERED",
+		string(RecurringStateExpired):            "EXPIRED",
+		string(RecurringStateDeclined):           "DECLINED",
+		string(RecurringRetryStatusPending):      "pending",
+		string(RecurringRetryStatusFailed):       "failed",
+		string(RecurringRetryStatusSuccess):      "success",
+		string(WebhookEventTypePaymentCaptured):  "payment.captured",
+		string(WebhookEventTypeWebhookTest):      "webhook.test",
 		string(IPNTypeTransfer):                  "transfer",
 		string(IPNTypeCapture):                   "capture",
 		string(IPNTypeDCB):                       "dcb",
@@ -316,13 +277,16 @@ func TestEnumValidRejectsUnknown(t *testing.T) {
 	if TransactionType("x").Valid() || TransactionStatus("x").Valid() || BlikAliasType("x").Valid() ||
 		RedirectType("x").Valid() || DCCDecision("x").Valid() || CardRecurringFrequency("x").Valid() ||
 		CardRecurringOperation("x").Valid() || PayoutFeeMode("x").Valid() ||
-		BlikRecurringModel("x").Valid() || IPNType("x").Valid() {
+		RecurringModel("x").Valid() || RecurringMethod("x").Valid() || RecurringState("x").Valid() ||
+		RecurringRetryStatus("x").Valid() || WebhookEventType("x").Valid() || IPNType("x").Valid() {
 		t.Fatal("unknown values must be invalid")
 	}
 	if !TransactionTypeTransfers.Valid() || !TransactionStatusPaid.Valid() || !IPNTypeDCB.Valid() ||
 		!PayoutFeeModeGross.Valid() || !RedirectTypeForm.Valid() || !DCCDecisionReject.Valid() ||
 		!CardRecurringFrequencyMonthly.Valid() || !CardRecurringOperationCharge.Valid() ||
-		!BlikAliasTypePayID.Valid() || !BlikRecurringModelManual.Valid() {
+		!BlikAliasTypeUID.Valid() || !RecurringModelManual.Valid() || !RecurringMethodBlik.Valid() ||
+		!RecurringStateDeclined.Valid() || !RecurringRetryStatusSuccess.Valid() ||
+		!WebhookEventTypePayoutFailed.Valid() || !WebhookEventTypeWebhookTest.Valid() {
 		t.Fatal("known values must be valid")
 	}
 }

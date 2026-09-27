@@ -11,14 +11,16 @@ import (
 )
 
 var (
-	emailPattern         = regexp.MustCompile(`^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$`)
-	datePattern          = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
-	blikFrequencyPattern = regexp.MustCompile(`^[1-9][0-9]{0,2}[DWMQY]$`)
-	partnerPattern       = regexp.MustCompile(`^[A-Z0-9]{1,64}$`)
-	blikCodePattern      = regexp.MustCompile(`^\d{6}$`)
-	panPattern           = regexp.MustCompile(`^\d{12,19}$`)
-	cvvPattern           = regexp.MustCompile(`^\d{3,4}$`)
-	expiryPattern        = regexp.MustCompile(`^(0[1-9]|1[0-2])/\d{2}$`)
+	emailPattern              = regexp.MustCompile(`^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$`)
+	datePattern               = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	recurringFrequencyPattern = regexp.MustCompile(`^[1-9][0-9]{0,2}[DWMY]$`)
+	partnerPattern            = regexp.MustCompile(`^[A-Z0-9]{1,64}$`)
+	blikCodePattern           = regexp.MustCompile(`^\d{6}$`)
+	panPattern                = regexp.MustCompile(`^\d{12,19}$`)
+	cvvPattern                = regexp.MustCompile(`^\d{3,4}$`)
+	expiryPattern             = regexp.MustCompile(`^(0[1-9]|1[0-2])/\d{2}$`)
+	eventIDPattern            = regexp.MustCompile(`^evt_[0-9a-z]{26}$`)
+	controlCharacterPattern   = regexp.MustCompile(`[\x00-\x1F\x7F]`)
 )
 
 func validURL(value string) bool {
@@ -48,22 +50,29 @@ func runeLen(value string) int {
 	return utf8.RuneCountInString(value)
 }
 
-// ReturnURLs carries the three URLs dpay redirects to and notifies.
+// ReturnURLs carries the URLs dpay redirects the payer to and, optionally, notifies.
 type ReturnURLs struct {
 	// Success is where the payer lands after a successful payment.
 	Success string
 	// Fail is where the payer lands after a failed payment.
 	Fail string
-	// IPN receives the server-to-server payment notification.
+	// IPN receives the server-to-server payment notification. Empty means no
+	// IPN: url_ipn is not sent (its checksum segment stays empty) and the outcome
+	// comes only as a webhook.
 	IPN string
 }
 
-// Validate reports whether all three URLs are well formed.
+// Validate reports whether the success and fail URLs and the IPN URL, when
+// set, are well formed.
 func (u ReturnURLs) Validate() error {
 	for _, pair := range []struct {
-		name  string
-		value string
-	}{{"success", u.Success}, {"fail", u.Fail}, {"ipn", u.IPN}} {
+		name     string
+		value    string
+		optional bool
+	}{{"success", u.Success, false}, {"fail", u.Fail, false}, {"ipn", u.IPN, true}} {
+		if pair.optional && pair.value == "" {
+			continue
+		}
 		if !validURL(pair.value) {
 			return newValidationError(fmt.Sprintf("Invalid %s URL %q", pair.name, pair.value))
 		}
@@ -272,69 +281,6 @@ func (b BlikAliasRegistration) toBody() *wire.Body {
 	body := wire.NewBody()
 	body.Set("label", b.Label)
 	body.Set("type", string(b.Type))
-	return body
-}
-
-// BlikRecurringRegistration asks dpay to register a BLIK recurring mandate.
-type BlikRecurringRegistration struct {
-	// Label is shown to the payer, 1-50 characters.
-	Label string
-	// Model is the mandate model.
-	Model BlikRecurringModel
-	// Frequency matches ^[1-9][0-9]{0,2}[DWMQY]$, for example 1M.
-	Frequency string
-	// Value is the recurring amount, sent as a decimal string.
-	Value *Money
-	// LimitAmt is the per-charge limit in minor units.
-	LimitAmt *int
-	// TotLimitAmt is the total limit in minor units.
-	TotLimitAmt *int
-	// LimitAmtFixed marks the limit as fixed.
-	LimitAmtFixed *bool
-	// ExpirationDate is the mandate expiry in YYYY-MM-DD format.
-	ExpirationDate *string
-	// InitDate is the first charge date in YYYY-MM-DD format.
-	InitDate *string
-}
-
-// Validate reports whether the label, model, frequency and dates are acceptable.
-func (b BlikRecurringRegistration) Validate() error {
-	if length := runeLen(b.Label); length == 0 || length > 50 {
-		return newValidationError("Alias label must be 1-50 characters")
-	}
-	if !b.Model.Valid() {
-		return newValidationError(fmt.Sprintf("Invalid recurring model %q", string(b.Model)))
-	}
-	if !blikFrequencyPattern.MatchString(b.Frequency) {
-		return newValidationError(fmt.Sprintf("Invalid recurring frequency %q", b.Frequency))
-	}
-	if b.ExpirationDate != nil {
-		if err := validateDate(*b.ExpirationDate); err != nil {
-			return err
-		}
-	}
-	if b.InitDate != nil {
-		if err := validateDate(*b.InitDate); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (b BlikRecurringRegistration) toBody() *wire.Body {
-	body := wire.NewBody()
-	body.Set("label", b.Label)
-	body.Set("type", string(BlikAliasTypePayID))
-	body.Set("model", string(b.Model))
-	body.Set("frequency", b.Frequency)
-	if b.Value != nil {
-		body.Set("value", b.Value.String())
-	}
-	body.SetIfNotNil("limit_amt", b.LimitAmt)
-	body.SetIfNotNil("tot_limit_amt", b.TotLimitAmt)
-	body.SetIfNotNil("is_limit_amt_fixed", b.LimitAmtFixed)
-	body.SetIfNotNil("expiration_date", b.ExpirationDate)
-	body.SetIfNotNil("init_date", b.InitDate)
 	return body
 }
 

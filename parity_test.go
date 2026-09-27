@@ -69,10 +69,16 @@ func goldenResponses() []string {
 		`{"data":{"alias_value":"alias-1","alias_type":"UID","status":"ACTIVE"}}`,
 		`{"data":{}}`,
 		`{"data":{}}`,
-		`{"data":{"alias_value":"payid-1","alias_type":"PAYID","status":"ACTIVE"}}`,
+		`{"data":{"alias":"payid-1","status":"ACTIVE"}}`,
 		`-----BEGIN PUBLIC KEY-----`,
 		okCard, okCard, okCard, okCard, okCard, okCard, okCard, okCard,
 		`{"id":42,"state":1,"net":"100.00"}`,
+		`{"error":false,"msg":"Internal processing","status":true,"transactionId":"tx-4"}`,
+		`{"status":"success","data":{"transactionId":"tx-4","retry":{"status":"pending","count":1}}}`,
+		`{"status":"success","data":{"alias":"SUB-1","status":"UNREGISTERED"}}`,
+		`{"status":"success","refund":true}`,
+		okCard,
+		`{"status":"success","data":[],"has_more":false,"next_starting_after":null}`,
 	}
 }
 
@@ -114,7 +120,6 @@ func runGoldenScenario(t *testing.T, client *Client) {
 	device := goldenDevice()
 
 	limit, total := PLN(50000), PLN(600000)
-	recurringValue := PLN(1000)
 	vat := PLN(560)
 
 	full := &RegisterPaymentRequest{
@@ -146,16 +151,16 @@ func runGoldenScenario(t *testing.T, client *Client) {
 	}
 	mustRegister(t, client, ctx, full)
 
-	blikRecurring := &RegisterPaymentRequest{
-		Amount: PLN(1000), TransactionType: TransactionTypeBlikRecurring, URLs: urls,
+	recurringRegistration := &RegisterPaymentRequest{
+		Amount: PLN(1000), TransactionType: TransactionTypeTransfers, URLs: urls,
 		UserAgent: String("UA/1.0"), UserIP: String("10.0.0.1"), BlikCode: String("123456"),
-		RegisterBlikRecurringAlias: &BlikRecurringRegistration{
-			Label: "Subskrypcja", Model: BlikRecurringModelAutomatic, Frequency: "1M",
-			Value: &recurringValue, LimitAmt: Int(5000), TotLimitAmt: Int(60000),
+		RecurringRegistration: &RecurringRegistration{
+			Label: "Subskrypcja", Model: RecurringModelAutomatic, TermsURL: "https://shop.test/regulamin",
+			Frequency: String("1M"), LimitAmt: Int(5000), TotLimitAmt: Int(60000),
 			LimitAmtFixed: Bool(true), ExpirationDate: String("2027-01-01"), InitDate: String("2026-08-01"),
 		},
 	}
-	mustRegister(t, client, ctx, blikRecurring)
+	mustRegister(t, client, ctx, recurringRegistration)
 
 	cardRecurring := &RegisterPaymentRequest{
 		Amount: PLN(500), TransactionType: TransactionTypeCardRecurring, URLs: urls,
@@ -181,11 +186,11 @@ func runGoldenScenario(t *testing.T, client *Client) {
 	must(t, func() error { _, err := client.Banks.All(ctx); return err })
 	must(t, func() error { _, err := client.Banks.ForService(ctx, WithTimestamp(1784700000)); return err })
 	must(t, func() error { _, err := client.Blik.Alias(ctx, "alias-1", BlikAliasTypeUID); return err })
-	must(t, func() error { return client.Blik.UnregisterAlias(ctx, "alias-1", BlikAliasTypePayID) })
+	must(t, func() error { return client.Blik.UnregisterAlias(ctx, "alias-1", BlikAliasTypeUID) })
 	must(t, func() error {
-		return client.Blik.UnregisterAlias(ctx, "alias-1", BlikAliasTypePayID, WithUnregisterReason("na życzenie klienta"))
+		return client.Blik.UnregisterAlias(ctx, "alias-1", BlikAliasTypeUID, WithUnregisterReason("na życzenie klienta"))
 	})
-	must(t, func() error { _, err := client.Blik.RecurringStatus(ctx, "payid-1"); return err })
+	must(t, func() error { _, err := client.Recurring.Status(ctx, "payid-1"); return err })
 	must(t, func() error { _, err := client.Cards.PublicKey(ctx); return err })
 
 	cardRequest := &CardPaymentRequest{
@@ -194,13 +199,13 @@ func runGoldenScenario(t *testing.T, client *Client) {
 		EncryptedCardData: String("BASE64ENCRYPTED=="), ThreeDSConfirmed: Bool(true),
 		DCCDecision: DCCDecisionAccept,
 	}
-	captureAmount, cancelAmount := PLN(2999), PLN(1000)
+	cancelAmount := PLN(1000)
 	must(t, func() error { _, err := client.Cards.PayOTP(ctx, "tx-1", cardRequest); return err })
 	must(t, func() error {
 		_, err := client.Cards.PreAuth(ctx, "tx 1/2", &CardPaymentRequest{DeviceInfo: device})
 		return err
 	})
-	must(t, func() error { _, err := client.Cards.Capture(ctx, "tx-1", &captureAmount); return err })
+	must(t, func() error { _, err := client.Cards.Capture(ctx, "tx-1", PLN(2999)); return err })
 	must(t, func() error { _, err := client.Cards.Cancel(ctx, "tx-1", nil); return err })
 	must(t, func() error { _, err := client.Cards.Cancel(ctx, "tx-1", &cancelAmount); return err })
 	must(t, func() error {
@@ -220,6 +225,46 @@ func runGoldenScenario(t *testing.T, client *Client) {
 		return err
 	})
 	must(t, func() error { _, err := client.Payouts.Details(ctx, 42, WithTimestamp(1784700000)); return err })
+
+	// 0.2.0: recurring charge without IPN, recurring service, webhook targets and the Events API
+	recurringCharge := &RegisterPaymentRequest{
+		Amount: PLN(4999), TransactionType: TransactionTypeTransfers,
+		URLs:           ReturnURLs{Success: "https://shop.test/ok", Fail: "https://shop.test/fail"},
+		RecurringAlias: String("SUB-1"),
+		UserAgent:      String("UA/1.0"), UserIP: String("10.0.0.1"),
+		Description: String("Abonament 10/2026"),
+		Webhook: &WebhookTarget{URL: "https://shop.test/webhooks", Events: []WebhookEventType{
+			WebhookEventTypePaymentSucceeded, WebhookEventTypePaymentFailed,
+		}},
+		Reference: String("order-77"),
+	}
+	mustRegister(t, client, ctx, recurringCharge)
+	must(t, func() error { _, err := client.Recurring.Retry(ctx, "tx-4"); return err })
+	must(t, func() error {
+		_, err := client.Recurring.Cancel(ctx, "SUB-1", WithCancelReason("Rezygnacja"))
+		return err
+	})
+	must(t, func() error {
+		_, err := client.Refunds.Create(ctx, "tx-1", WithRefundAmount(PLN(500)), WithRefundReason("reklamacja"),
+			WithRefundWebhook(WebhookTarget{URL: "https://shop.test/webhooks/refunds", Events: []WebhookEventType{
+				WebhookEventTypeRefundSucceeded, WebhookEventTypeRefundFailed,
+			}}))
+		return err
+	})
+	must(t, func() error {
+		_, err := client.Cards.Capture(ctx, "tx-1", PLN(1500), WithCaptureWebhook(WebhookTarget{
+			URL: "https://shop.test/webhooks/captures", Events: []WebhookEventType{WebhookEventTypePaymentCaptured},
+		}))
+		return err
+	})
+	must(t, func() error {
+		_, err := client.Events.List(ctx, &EventListParams{
+			Types:       []WebhookEventType{WebhookEventTypePaymentSucceeded, WebhookEventTypeRefundFailed},
+			CreatedFrom: String("2026-09-01T00:00:00Z"),
+			Limit:       Int(10),
+		}, WithTimestamp(1784700000))
+		return err
+	})
 }
 
 func TestRequestParityWithPHPSDK(t *testing.T) {
@@ -310,10 +355,19 @@ func TestHelperParityWithPHPSDK(t *testing.T) {
 	if got := checksum.SecretSecond("test_service", []any{"29.99", 10, true, 10.0}); got != helpers.Checksums["secret_second_mixed"] {
 		t.Errorf("secret_second_mixed = %s, want %s", got, helpers.Checksums["secret_second_mixed"])
 	}
-	if got := checksum.OrderedBody([]any{"test_service", "tx-1"}); got != helpers.Checksums["ordered_simple"] {
+	simple := wire.NewBody()
+	simple.Set("service", "test_service")
+	simple.Set("transaction_id", "tx-1")
+	if got := checksum.OrderedBody(simple); got != helpers.Checksums["ordered_simple"] {
 		t.Errorf("ordered_simple = %s", got)
 	}
-	if got := checksum.OrderedBody([]any{"test_service", int64(1784700000), int64(42), "5.00", "reklamacja"}); got != helpers.Checksums["ordered_mixed"] {
+	mixed := wire.NewBody()
+	mixed.Set("service", "test_service")
+	mixed.Set("timestamp", int64(1784700000))
+	mixed.Set("withdraw_id", int64(42))
+	mixed.Set("value", "5.00")
+	mixed.Set("reason", "reklamacja")
+	if got := checksum.OrderedBody(mixed); got != helpers.Checksums["ordered_mixed"] {
 		t.Errorf("ordered_mixed = %s", got)
 	}
 

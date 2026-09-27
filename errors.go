@@ -30,8 +30,12 @@ type APIError struct {
 
 	// HTTPStatus is the response status. Rejections reported with HTTP 200 keep 200 here.
 	HTTPStatus int
-	// ErrorCode is the API error code, empty when the response carries none.
+	// ErrorCode is the API error code (the code field, e.g. CHECKSUM_REQUIRED or
+	// WEBHOOK_URL_INVALID, else errorcode), empty when the response carries none.
 	ErrorCode string
+	// Reason is the detailed reason next to the code, e.g. https_required for
+	// WEBHOOK_URL_INVALID, empty when the response carries none.
+	Reason string
 	// FieldErrors maps a field name to its validation messages.
 	FieldErrors map[string][]string
 	// RawBody is the unparsed response body.
@@ -69,6 +73,8 @@ type PaymentRejectedError struct {
 
 	// TransactionID is the identifier the API assigned before rejecting, may be empty.
 	TransactionID string
+	// ErrorDescription is the provider's description of the decline, empty when it sent none.
+	ErrorDescription string
 }
 
 // Unwrap exposes the embedded APIError to errors.As.
@@ -107,7 +113,8 @@ func (e *TransportError) Unwrap() error { return e.cause }
 // Is reports whether the error matches ErrTransport.
 func (e *TransportError) Is(target error) bool { return target == ErrTransport }
 
-// SignatureError is returned when an IPN payload is malformed or its signature does not match.
+// SignatureError is returned when an IPN or webhook payload is malformed, its
+// signature does not match or its timestamp is outside the tolerance.
 type SignatureError struct {
 	message string
 }

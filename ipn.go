@@ -90,6 +90,9 @@ func (e *IPNEvent) Type() IPNType { return IPNType(stringField(e.raw, "type")) }
 func (e *IPNEvent) IsTransfer() bool { return e.Type() == IPNTypeTransfer }
 
 // IsCapture reports whether this is a capture notification.
+//
+// Deprecated: dpay no longer sends capture IPNs - use the payment.captured
+// webhook event (WebhookEventTypePaymentCaptured).
 func (e *IPNEvent) IsCapture() bool { return e.Type() == IPNTypeCapture }
 
 // IsDCB reports whether this is a direct carrier billing notification.
@@ -105,6 +108,9 @@ func (e *IPNEvent) Version() int64 { return intField(e.raw, "version") }
 func (e *IPNEvent) Custom() string { return stringField(e.raw, "custom") }
 
 // CapturePaymentID returns the capture identifier, empty for other event types.
+//
+// Deprecated: dpay no longer sends capture IPNs - use the payment.captured
+// webhook event (WebhookEventTypePaymentCaptured).
 func (e *IPNEvent) CapturePaymentID() string { return stringField(e.raw, "capture_payment_id") }
 
 // Signature returns the signature the notification carried.

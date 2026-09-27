@@ -46,7 +46,7 @@ func TestBlikUnregisterAliasReasonStaysOutOfChecksum(t *testing.T) {
 	server, sent, path := recordingServer(t, 200, `{"data":{}}`)
 	client, _ := New("test_service", "secret_hash", WithBaseURLs(BaseURLs{APIPayments: server.URL}))
 
-	if err := client.Blik.UnregisterAlias(context.Background(), "alias-1", BlikAliasTypePayID,
+	if err := client.Blik.UnregisterAlias(context.Background(), "alias-1", BlikAliasTypeUID,
 		WithUnregisterReason("na życzenie klienta")); err != nil {
 		t.Fatal(err)
 	}
@@ -75,62 +75,16 @@ func TestBlikUnregisterAliasWithoutReason(t *testing.T) {
 	}
 }
 
-func TestBlikRecurringStatusCall(t *testing.T) {
-	server, sent, path := recordingServer(t, 200, `{"data":{
-		"alias_value":"payid-1","alias_type":"PAYID","status":"ACTIVE","expiration_date":"2027-01-01",
-		"registration":{"model":"A","frequency":"1M","limit_amt":5000,"tot_limit_amt":60000,
-			"is_limit_amt_fixed":true,"init_date":"2026-08-01","label":"Subskrypcja",
-			"registered_at":"2026-07-01 12:00:00"}}}`)
-	client, _ := New("test_service", "secret_hash", WithBaseURLs(BaseURLs{APIPayments: server.URL}))
-
-	status, err := client.Blik.RecurringStatus(context.Background(), "payid-1")
-	if err != nil {
-		t.Fatal(err)
+func TestBlikAliasesAcceptOnlyUID(t *testing.T) {
+	client, _ := New("svc", "hash", WithBaseURLs(BaseURLs{APIPayments: "http://127.0.0.1:1"}))
+	// PAYID aliases belong to recurring payments (client.Recurring), the API answers 422 here
+	if _, err := client.Blik.Alias(context.Background(), "a", "PAYID"); err == nil ||
+		err.Error() != `dpay: Invalid BLIK alias type "PAYID"` {
+		t.Fatalf("Alias err = %v", err)
 	}
-	if *path != "/api/v1_0/payments/blik/recurring/status" {
-		t.Fatalf("path = %q", *path)
-	}
-	if status.Value() != "payid-1" || status.Type() != BlikAliasTypePayID || !status.IsActive() {
-		t.Fatalf("status = %+v", status)
-	}
-	registration := status.Registration()
-	if registration == nil || registration.Model() != "A" || registration.Frequency() != "1M" {
-		t.Fatal("registration lost")
-	}
-	if registration.LimitAmt() == nil || *registration.LimitAmt() != 5000 {
-		t.Fatal("limit_amt lost")
-	}
-	if registration.TotLimitAmt() == nil || *registration.TotLimitAmt() != 60000 {
-		t.Fatal("tot_limit_amt lost")
-	}
-	if registration.IsLimitAmtFixed() == nil || !*registration.IsLimitAmtFixed() {
-		t.Fatal("is_limit_amt_fixed lost")
-	}
-	if registration.Label() != "Subskrypcja" || registration.RegisteredAt() != "2026-07-01 12:00:00" {
-		t.Fatal("registration metadata lost")
-	}
-	if registration.InitDate() != "2026-08-01" {
-		t.Fatal("init_date lost")
-	}
-
-	decoded := decodeBody(t, *sent)
-	if _, present := decoded["alias_type"]; present {
-		t.Fatal("recurring/status must not send alias_type")
-	}
-	if decoded["checksum"] != expectedRegisterChecksum(t, "test_service", "secret_hash", "payid-1") {
-		t.Fatalf("checksum = %v", decoded["checksum"])
-	}
-}
-
-func TestBlikRecurringStatusWithoutRegistration(t *testing.T) {
-	server, _, _ := recordingServer(t, 200, `{"data":{"alias_value":"p","status":"INACTIVE"}}`)
-	client, _ := New("svc", "hash", WithBaseURLs(BaseURLs{APIPayments: server.URL}))
-	status, _ := client.Blik.RecurringStatus(context.Background(), "p")
-	if status.Registration() != nil || status.IsActive() {
-		t.Fatalf("status = %+v", status)
-	}
-	if status.Type() != BlikAliasTypePayID {
-		t.Fatal("missing alias_type must default to PAYID")
+	if err := client.Blik.UnregisterAlias(context.Background(), "a", "PAYID"); err == nil ||
+		err.Error() != `dpay: Invalid BLIK alias type "PAYID"` {
+		t.Fatalf("UnregisterAlias err = %v", err)
 	}
 }
 

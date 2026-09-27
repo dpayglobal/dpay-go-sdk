@@ -137,3 +137,49 @@ func TestCheckAvailabilityUnhandledStatusIsError(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestRefundWebhookValuesAreHashedInTheOrderSent(t *testing.T) {
+	client, sent, path := newVectorClient(t, 200, `{"status":"success","refund":true,"message":"dpay.pl `+recurringTransactionID+`"}`)
+
+	refund, err := client.Refunds.Create(context.Background(), recurringTransactionID,
+		WithRefundAmount(PLN(1500)), WithRefundReason("Zwrot"),
+		WithRefundWebhook(WebhookTarget{URL: "https://shop.example/webhooks/refunds", Events: []WebhookEventType{
+			WebhookEventTypeRefundSucceeded, WebhookEventTypeRefundFailed,
+		}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !refund.IsAccepted() || *path != "/api/v1/pbl/refund" {
+		t.Fatalf("refund = %v, path = %q", refund.Raw(), *path)
+	}
+	want := `{"service":"sdk-test-service","transaction_id":"` + recurringTransactionID + `","value":"15.00","reason":"Zwrot",` +
+		`"webhook":{"url":"https://shop.example/webhooks/refunds","events":["refund.succeeded","refund.failed"]},` +
+		// ...|15.00|Zwrot|https://shop.example/webhooks/refunds|refund.succeeded|refund.failed|hash
+		`"checksum":"53620f0ea6b46723866a46f2f0059c79cbe080e59d4f134508546be3fa08dacf"}`
+	if *sent != want {
+		t.Fatalf("body = %s\nwant   %s", *sent, want)
+	}
+}
+
+func TestRefundWebhookOnlyAcceptsRefundEvents(t *testing.T) {
+	client, _ := New("svc", "hash", WithBaseURLs(BaseURLs{Panel: "http://127.0.0.1:1"}))
+	_, err := client.Refunds.Create(context.Background(), "TX", WithRefundWebhook(WebhookTarget{
+		URL: "https://shop.example/webhooks", Events: []WebhookEventType{WebhookEventTypePaymentSucceeded},
+	}))
+	if !errors.Is(err, ErrInvalidArgument) || err.Error() != `dpay: Event "payment.succeeded" is not allowed in the webhook object of a refund` {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestCheckAvailabilityDoesNotSendTheWebhook(t *testing.T) {
+	client, sent, _ := newVectorClient(t, 200, `{"status":"success","refund":true,"message":"Refund available"}`)
+	if _, err := client.Refunds.CheckAvailability(context.Background(), recurringTransactionID,
+		WithRefundWebhook(WebhookTarget{URL: "https://shop.example/webhooks/refunds"})); err != nil {
+		t.Fatal(err)
+	}
+	want := `{"service":"sdk-test-service","transaction_id":"` + recurringTransactionID +
+		`","checksum":"dbae59367823ac7e27dcb76ab1e093eedb5b352dc1dd122036dba0f7a2642d5c"}`
+	if *sent != want {
+		t.Fatalf("body = %s\nwant   %s", *sent, want)
+	}
+}

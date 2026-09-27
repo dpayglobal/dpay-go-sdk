@@ -3,6 +3,7 @@ package php
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"math"
 	"strconv"
@@ -10,6 +11,53 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 )
+
+// Trim strips the characters PHP trim removes by default: space, tab, line feed,
+// carriage return, NUL and vertical tab. strings.TrimSpace differs on NUL and on
+// Unicode spaces.
+func Trim(value string) string {
+	return strings.Trim(value, " \t\n\r\x00\x0B")
+}
+
+// Base64DecodeStrict decodes value the way PHP base64_decode($value, true) does:
+// spaces, tabs and line breaks are skipped, missing padding is accepted, while
+// characters outside the alphabet, data after padding, a truncated last group and
+// wrong padding are rejected.
+func Base64DecodeStrict(value string) ([]byte, bool) {
+	data := make([]byte, 0, len(value))
+	padding := 0
+	for index := 0; index < len(value); index++ {
+		character := value[index]
+		switch {
+		case character == '=':
+			padding++
+		case character == ' ' || character == '\t' || character == '\n' || character == '\r':
+		case isBase64Character(character):
+			if padding > 0 {
+				return nil, false
+			}
+			data = append(data, character)
+		default:
+			return nil, false
+		}
+	}
+	if len(data)%4 == 1 {
+		return nil, false
+	}
+	if padding > 0 && (padding > 2 || (len(data)+padding)%4 != 0) {
+		return nil, false
+	}
+	decoded, err := base64.RawStdEncoding.DecodeString(string(data))
+	if err != nil {
+		return nil, false
+	}
+	return decoded, true
+}
+
+func isBase64Character(character byte) bool {
+	return character >= 'A' && character <= 'Z' || character >= 'a' && character <= 'z' ||
+		character >= '0' && character <= '9' || character == '+' || character == '/'
+}
 
 // IsScalar reports whether v is an int, float, bool or string, matching PHP is_scalar.
 func IsScalar(v any) bool {

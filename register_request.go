@@ -2,7 +2,9 @@ package dpay
 
 import (
 	"fmt"
+	"net"
 
+	"github.com/dpayglobal/dpay-go-sdk/internal/php"
 	"github.com/dpayglobal/dpay-go-sdk/internal/wire"
 )
 
@@ -13,7 +15,7 @@ type RegisterPaymentRequest struct {
 	Amount Money
 	// TransactionType selects the payment flow.
 	TransactionType TransactionType
-	// URLs are the success, failure and IPN endpoints.
+	// URLs are the success and failure pages and the optional IPN endpoint.
 	URLs ReturnURLs
 
 	// Description is shown to the payer.
@@ -46,19 +48,29 @@ type RegisterPaymentRequest struct {
 	CurrencyCode Currency
 	// PartnerPlatform identifies the integration platform, matching ^[A-Z0-9]{1,64}$.
 	PartnerPlatform *string
-	// UserAgent is the payer browser User-Agent, required with BlikCode and BlikAlias.
+	// UserAgent is the payer browser User-Agent: required with BlikCode and
+	// BlikAlias, optional with RecurringAlias.
 	UserAgent *string
-	// UserIP is the payer IP address, required with BlikCode and BlikAlias.
+	// UserIP is the payer IP address: required with BlikCode and BlikAlias,
+	// optional with RecurringAlias. It must be an IPv4 or IPv6 address.
 	UserIP *string
 
 	// BlikCode is a six-digit BLIK code, mutually exclusive with BlikAlias.
 	BlikCode *string
-	// BlikAlias pays with a registered alias, mutually exclusive with BlikCode and alias registration.
+	// BlikAlias pays with a registered OneClick alias, mutually exclusive with
+	// BlikCode, alias registration and recurring payments.
 	BlikAlias *string
-	// RegisterBlikAlias registers a BLIK alias during this payment.
+	// RegisterBlikAlias registers a BLIK OneClick alias during this payment.
 	RegisterBlikAlias *BlikAliasRegistration
-	// RegisterBlikRecurringAlias registers a BLIK recurring mandate during this payment.
-	RegisterBlikRecurringAlias *BlikRecurringRegistration
+	// RecurringRegistration registers a recurring payment together with this
+	// payment. It requires BlikCode and TransactionTypeTransfers; the amount may
+	// be 0 (consent only) or an initial fee.
+	RecurringRegistration *RecurringRegistration
+	// RecurringAlias charges a registered recurring payment server-to-server,
+	// without a BLIK code: TransactionTypeTransfers, amount above 0, 1-128
+	// characters. The alias is appended to the checksum, binding the charge to
+	// that customer.
+	RecurringAlias *string
 	// AliasIPNURL receives alias lifecycle notifications.
 	AliasIPNURL *string
 	// NoDelay requests immediate processing.
@@ -87,6 +99,15 @@ type RegisterPaymentRequest struct {
 	Efaktura *bool
 	// Invoice carries the e-invoice details.
 	Invoice *InvoiceDetails
+
+	// Webhook sends the events of this payment (and later of its refunds and
+	// recurring payment) also to this URL, signed with the webhook secret of the
+	// service. It does not enter the checksum.
+	Webhook *WebhookTarget
+	// Reference is your reference of the payment, 1-64 characters without
+	// control characters (surrounding spaces are trimmed), returned as
+	// references.merchant in webhooks. It does not enter the checksum.
+	Reference *string
 }
 
 // Validate reports the first problem with the request, using the same messages
@@ -109,23 +130,42 @@ func (r *RegisterPaymentRequest) Validate() error {
 	if r.PartnerPlatform != nil && !partnerPattern.MatchString(*r.PartnerPlatform) {
 		return newValidationError("Partner platform must match ^[A-Z0-9]{1,64}$")
 	}
+	if r.UserIP != nil && net.ParseIP(*r.UserIP) == nil {
+		return newValidationError(fmt.Sprintf("Invalid user IP %q", *r.UserIP))
+	}
 	if r.BlikCode != nil && !blikCodePattern.MatchString(*r.BlikCode) {
 		return newValidationError("BLIK code must be exactly 6 digits")
 	}
 	if r.BlikCode != nil && r.BlikAlias != nil {
 		return newValidationError("blik_code cannot be combined with blik_alias")
 	}
-	if r.BlikAlias != nil && (r.RegisterBlikAlias != nil || r.RegisterBlikRecurringAlias != nil) {
-		return newValidationError("blik_alias cannot be combined with blik_code or alias registration")
+	if r.BlikAlias != nil && (r.RegisterBlikAlias != nil || r.RecurringRegistration != nil || r.RecurringAlias != nil) {
+		return newValidationError("blik_alias cannot be combined with blik_code, alias registration or recurring payments")
 	}
 	if r.RegisterBlikAlias != nil {
 		if err := r.RegisterBlikAlias.Validate(); err != nil {
 			return err
 		}
 	}
-	if r.RegisterBlikRecurringAlias != nil {
-		if err := r.RegisterBlikRecurringAlias.Validate(); err != nil {
+	if r.RecurringRegistration != nil {
+		if err := r.RecurringRegistration.validateFields(); err != nil {
 			return err
+		}
+	}
+	if r.RecurringAlias != nil {
+		if err := validateRecurringAlias(*r.RecurringAlias); err != nil {
+			return err
+		}
+	}
+	if r.Webhook != nil {
+		if err := r.Webhook.validateFor(PaymentRegistrationEventTypes(), "a payment registration"); err != nil {
+			return err
+		}
+	}
+	if r.Reference != nil {
+		reference := php.Trim(*r.Reference)
+		if length := runeLen(reference); length == 0 || length > 64 || controlCharacterPattern.MatchString(reference) {
+			return newValidationError("Reference must be 1-64 characters without control characters")
 		}
 	}
 	if r.AliasIPNURL != nil && !validURL(*r.AliasIPNURL) {
@@ -160,7 +200,55 @@ func (r *RegisterPaymentRequest) Validate() error {
 			return err
 		}
 	}
+	if err := r.validateRecurringCombination(); err != nil {
+		return err
+	}
+	if r.RecurringRegistration != nil {
+		return r.RecurringRegistration.validateModel()
+	}
 	return nil
+}
+
+// validateRecurringCombination mirrors RegisterPaymentRequest::assertRecurringCombination of the PHP SDK.
+func (r *RegisterPaymentRequest) validateRecurringCombination() error {
+	if r.RecurringRegistration == nil && r.RecurringAlias == nil {
+		return nil
+	}
+	if r.RecurringRegistration != nil && r.RecurringAlias != nil {
+		return newValidationError("recurring_registration cannot be combined with recurring_alias")
+	}
+	if r.TransactionType != TransactionTypeTransfers {
+		return newValidationError(`Recurring payments require transactionType "transfers"`)
+	}
+	conflicts := []presentField{
+		{"blik_alias", r.BlikAlias != nil},
+		{"register_blik_alias", r.RegisterBlikAlias != nil},
+		{"register_card_recurring", r.CardRecurring != nil},
+		{"card_recurring_alias", r.CardRecurringAlias != nil},
+	}
+	if r.RecurringRegistration != nil {
+		conflicts = append(conflicts, presentField{"channel", r.Channel != nil})
+		if r.BlikCode == nil {
+			return newValidationError("recurring_registration requires the customer's BLIK code (BlikCode)")
+		}
+	} else {
+		conflicts = append(conflicts, presentField{"blik_code", r.BlikCode != nil})
+		if r.Amount.Minor() <= 0 {
+			return newValidationError("A recurring charge requires an amount above 0")
+		}
+	}
+	for _, conflict := range conflicts {
+		if conflict.present {
+			return newValidationError(conflict.name + " cannot be combined with a recurring payment")
+		}
+	}
+	return nil
+}
+
+// presentField is a request field name and whether it is set.
+type presentField struct {
+	name    string
+	present bool
 }
 
 func (r *RegisterPaymentRequest) toBody(service string) (*wire.Body, error) {
@@ -174,7 +262,9 @@ func (r *RegisterPaymentRequest) toBody(service string) (*wire.Body, error) {
 	body.Set("transactionType", string(r.TransactionType))
 	body.Set("url_success", r.URLs.Success)
 	body.Set("url_fail", r.URLs.Fail)
-	body.Set("url_ipn", r.URLs.IPN)
+	if r.URLs.IPN != "" {
+		body.Set("url_ipn", r.URLs.IPN)
+	}
 
 	body.SetIfNotNil("description", r.Description)
 	body.SetIfNotNil("custom", r.Custom)
@@ -206,9 +296,10 @@ func (r *RegisterPaymentRequest) toBody(service string) (*wire.Body, error) {
 	if r.RegisterBlikAlias != nil {
 		body.Set("register_blik_alias", r.RegisterBlikAlias.toBody())
 	}
-	if r.RegisterBlikRecurringAlias != nil {
-		body.Set("register_blik_recurring_alias", r.RegisterBlikRecurringAlias.toBody())
+	if r.RecurringRegistration != nil {
+		body.Set("recurring_registration", r.RecurringRegistration.toBody())
 	}
+	body.SetIfNotNil("recurring_alias", r.RecurringAlias)
 	body.SetIfNotNil("alias_ipn_url", r.AliasIPNURL)
 	body.SetIfNotNil("no_delay", r.NoDelay)
 
@@ -239,6 +330,12 @@ func (r *RegisterPaymentRequest) toBody(service string) (*wire.Body, error) {
 	body.SetIfNotNil("efaktura", r.Efaktura)
 	if r.Invoice != nil {
 		body.Set("invoice", r.Invoice.toBody())
+	}
+	if r.Webhook != nil {
+		body.Set("webhook", r.Webhook.toBody())
+	}
+	if r.Reference != nil {
+		body.Set("reference", php.Trim(*r.Reference))
 	}
 	return body, nil
 }

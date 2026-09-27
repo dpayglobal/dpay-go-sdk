@@ -16,15 +16,20 @@ func mapAPIError(response apiResponse) error {
 		message = value
 	}
 
+	// Cards API and webhook errors carry "code", the older payments errors "errorcode"
 	errorCode := ""
-	if value, ok := data["errorcode"].(string); ok {
+	if value, ok := data["code"].(string); ok {
+		errorCode = value
+	} else if value, ok := data["errorcode"].(string); ok {
 		errorCode = value
 	}
+	reason, _ := data["reason"].(string)
 
 	base := &APIError{
 		message:     message,
 		HTTPStatus:  response.status,
 		ErrorCode:   errorCode,
+		Reason:      reason,
 		FieldErrors: normalizeFieldErrors(data["errors"]),
 		RawBody:     string(response.body),
 	}
@@ -32,6 +37,7 @@ func mapAPIError(response apiResponse) error {
 	if response.status == 429 {
 		base.kind = ErrRateLimit
 		base.ErrorCode = ""
+		base.Reason = ""
 		base.FieldErrors = map[string][]string{}
 		return &RateLimitError{
 			APIError:   base,
