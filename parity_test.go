@@ -55,6 +55,8 @@ func (d *recordingDoer) Do(request *http.Request) (*http.Response, error) {
 
 func goldenResponses() []string {
 	okCard := `{"success":true,"message":{"redirectType":"SUCCESS"}}`
+	registered := `{"error":false,"msg":"Internal processing","status":true,"transactionId":"tx-5"}`
+	emptyPayouts := `{"withdraws":[],"meta":{"page":1,"per_page":10,"total":0,"total_pages":0}}`
 	return []string{
 		`{"transactionId":"tx-1","msg":"https://secure.dpay.pl/pay/1"}`,
 		`{"transactionId":"tx-2","msg":"Transaction paid"}`,
@@ -79,6 +81,14 @@ func goldenResponses() []string {
 		`{"status":"success","refund":true}`,
 		okCard,
 		`{"status":"success","data":[],"has_more":false,"next_starting_after":null}`,
+		// 0.3.0
+		registered, registered,
+		`{"status":"success","refund":true,"message":"dpay.pl zwrot RET-2026-0001"}`,
+		emptyPayouts, emptyPayouts,
+		`{"settlement":{"id":42,"currency_code":"EUR"},"summary":{"count":0},"transactions":[],"meta":{"page":2,"per_page":500,"total":0,"total_pages":0}}`,
+		okCard,
+		`{"withdraws":[{"id":1,"type":"direct"}],"meta":{"page":1,"per_page":1,"total":2,"total_pages":2}}`,
+		`{"withdraws":[{"id":2,"type":"direct"}],"meta":{"page":2,"per_page":1,"total":2,"total_pages":2}}`,
 	}
 }
 
@@ -122,8 +132,10 @@ func runGoldenScenario(t *testing.T, client *Client) {
 	limit, total := PLN(50000), PLN(600000)
 	vat := PLN(560)
 
+	// 0.3.0: the amount is in EUR, so CurrencyCode EUR matches it (the body is the same as in 0.2.0)
+	eur, _ := NewMoney(2999, CurrencyEUR)
 	full := &RegisterPaymentRequest{
-		Amount: PLN(2999), TransactionType: TransactionTypeTransfers, URLs: urls,
+		Amount: eur, TransactionType: TransactionTypeTransfers, URLs: urls,
 		Description: String("Zamówienie #1234 / ĄĘŚŻ <b>&</b>"),
 		Custom:      String("order-1234"),
 		Payer:       &Payer{Email: String("jan@example.com"), FirstName: String("Jan"), LastName: String("Kowalski")},
@@ -265,6 +277,68 @@ func runGoldenScenario(t *testing.T, client *Client) {
 		}, WithTimestamp(1784700000))
 		return err
 	})
+
+	// 0.3.0: MB WAY, a CZK amount, refund message id, payout list and full details, Apple Pay email
+	mbWayAmount, _ := NewMoney(500, CurrencyEUR)
+	mbWayDevice := DeviceInfo{
+		BrowserAcceptHeader: "text/html", BrowserLanguage: "pt-PT", BrowserColorDepth: 24,
+		BrowserScreenHeight: 1080, BrowserScreenWidth: 1920, BrowserTZ: 0, BrowserUserAgent: "Mozilla/5.0",
+		SystemFamily: "Android", GeoLocalization: "38.7223,-9.1393", DeviceID: "device-mbway", ApplicationName: "Loja",
+		BrowserJavaEnabled: Bool(false),
+	}
+	mustRegister(t, client, ctx, &RegisterPaymentRequest{
+		Amount: mbWayAmount, TransactionType: TransactionTypeMBWayDirect, URLs: urls,
+		PhoneNumber: String("+351912345678"), CurrencyCode: CurrencyEUR,
+		Channel:    String("373"),
+		Payer:      &Payer{Email: String("client@example.com"), FirstName: String("Joao"), LastName: String("Silva")},
+		AcceptTos:  Bool(true),
+		DeviceInfo: &mbWayDevice,
+	})
+	czk, _ := NewMoney(49900, CurrencyCZK)
+	mustRegister(t, client, ctx, &RegisterPaymentRequest{Amount: czk, TransactionType: TransactionTypeTransfers, URLs: urls})
+	must(t, func() error {
+		_, err := client.Refunds.Create(ctx, "tx-1", WithRefundMessageID("RET-2026-0001"))
+		return err
+	})
+	processed := PayoutStateProcessed
+	must(t, func() error {
+		_, err := client.Payouts.List(ctx, &PayoutListParams{
+			Type: PayoutTypeStandard, State: &processed, DateTo: String("2026-08-31 23:59:59 "), DateFrom: String(" 2026-08-01\n"),
+			Page: Int(2), PerPage: Int(10),
+		})
+		return err
+	})
+	waiting := PayoutStateWaiting
+	must(t, func() error { _, err := client.Payouts.List(ctx, &PayoutListParams{State: &waiting}); return err })
+	must(t, func() error {
+		_, err := client.Payouts.DetailsFull(ctx, 42, &PayoutPageParams{Page: Int(2), PerPage: Int(500)})
+		return err
+	})
+	must(t, func() error {
+		_, err := client.Cards.ApplePay(ctx, "tx-1", &ApplePayRequest{
+			DeviceInfo: device, Token: String("ap-token"), ChannelID: Int(86), Email: String("jan@example.com"),
+		})
+		return err
+	})
+	payouts := client.Payouts.Iterate(ctx, &PayoutListParams{Type: PayoutTypeDirect, PerPage: Int(1)})
+	walked := 0
+	for payouts.Next() {
+		walked++
+	}
+	if payouts.Err() != nil || walked != 2 {
+		t.Fatalf("Iterate walked %d payouts, err %v", walked, payouts.Err())
+	}
+}
+
+// headerValue finds a header case-insensitively: extra headers keep the exact
+// spelling of their name (like in the PHP SDK), so http.Header.Get may miss them.
+func headerValue(header http.Header, name string) string {
+	for key, values := range header {
+		if strings.EqualFold(key, name) && len(values) > 0 {
+			return values[0]
+		}
+	}
+	return ""
 }
 
 func TestRequestParityWithPHPSDK(t *testing.T) {
@@ -303,7 +377,7 @@ func TestRequestParityWithPHPSDK(t *testing.T) {
 			if name == "User-Agent" {
 				continue
 			}
-			if gotValue := got.Header.Get(name); gotValue != wantValue {
+			if gotValue := headerValue(got.Header, name); gotValue != wantValue {
 				t.Errorf("call %d header %s = %q, want %q", index, name, gotValue, wantValue)
 				failed = true
 			}

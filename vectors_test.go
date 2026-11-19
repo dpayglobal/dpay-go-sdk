@@ -12,7 +12,7 @@ import (
 	"github.com/dpayglobal/dpay-go-sdk/internal/wire"
 )
 
-// apiVectors mirrors testdata/api_vectors.json: checksum and webhook vectors
+// apiVectors mirrors testdata/api_vectors.json: checksum, webhook and IPN vectors
 // shared by all dpay SDKs (synthetic data computed with the API code; identical
 // to tests/Fixtures/api_vectors.json of the PHP SDK).
 type apiVectors struct {
@@ -36,6 +36,10 @@ type apiVectors struct {
 		Checksum string          `json:"checksum"`
 	} `json:"ordered_body"`
 	Webhook webhookVector `json:"webhook"`
+	IPN     []struct {
+		Name    string          `json:"name"`
+		Payload json.RawMessage `json:"payload"`
+	} `json:"ipn"`
 }
 
 type webhookVector struct {
@@ -58,7 +62,7 @@ func loadAPIVectors(t *testing.T) apiVectors {
 	if err := json.Unmarshal(raw, &vectors); err != nil {
 		t.Fatal(err)
 	}
-	if len(vectors.SecretSecond) == 0 || len(vectors.Operation) == 0 || len(vectors.OrderedBody) == 0 || vectors.Webhook.ID == "" {
+	if len(vectors.SecretSecond) == 0 || len(vectors.Operation) == 0 || len(vectors.OrderedBody) == 0 || vectors.Webhook.ID == "" || len(vectors.IPN) == 0 {
 		t.Fatal("testdata/api_vectors.json is incomplete")
 	}
 	return vectors

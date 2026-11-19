@@ -260,8 +260,8 @@ func isASCIISpace(character rune) bool {
 
 // WebhookEvent is the envelope of a webhook event or of an Events API entry:
 // {id, type, api_version, created, livemode, service, [merchant_ref], data: {object}}.
-// The object (payment, refund, recurring_payment, payout) stays a map, with
-// amounts in minor units.
+// Object returns data.object as a map (amounts in minor units); Payment,
+// Refund, RecurringPayment and Payout return it typed.
 type WebhookEvent struct {
 	raw map[string]any
 }

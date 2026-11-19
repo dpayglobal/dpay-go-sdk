@@ -325,5 +325,467 @@
         "merchant_ref": null,
         "object_type": null,
         "object": []
+    },
+    "transaction_fees": {
+        "rate": "2",
+        "minimal_fee": 20,
+        "permanent_fee": 0,
+        "urls": {
+            "success": "https://shop.example/ok",
+            "fail": "https://shop.example/fail",
+            "ipn": "https://shop.example/ipn"
+        }
+    },
+    "transaction_fees_strings": {
+        "rate": "1.49",
+        "minimal_fee": 30,
+        "permanent_fee": null,
+        "urls": {
+            "success": "https://shop.example/ok",
+            "fail": null,
+            "ipn": null
+        }
+    },
+    "registered_multibanco": {
+        "multibanco": {
+            "entity": "12345",
+            "reference": "123456789",
+            "amount": {
+                "minor": 1250,
+                "currency": "EUR"
+            },
+            "currency": "EUR",
+            "expires_at": "2026-11-21T10:00:00+00:00"
+        },
+        "paid_transaction": null
+    },
+    "registered_multibanco_sparse": {
+        "multibanco": {
+            "entity": "12345",
+            "reference": "",
+            "amount": null,
+            "currency": "EUR",
+            "expires_at": null
+        },
+        "paid_transaction": null
+    },
+    "registered_paid_transaction": {
+        "multibanco": null,
+        "paid_transaction": {
+            "payment_id": "30D9493D-1D73-3FBD-A5D4-633723CC7A68",
+            "status": "captured",
+            "is_paid": true,
+            "value": {
+                "minor": 1000,
+                "currency": "EUR"
+            },
+            "email": "client@example.com",
+            "description": "Zamówienie #1234",
+            "name": "Jan",
+            "surname": "Kowalski",
+            "pid": null,
+            "mtid": "77",
+            "creation_date": "2026-11-18 10:00:00",
+            "payment_date": "2026-11-18 10:01:00"
+        }
+    },
+    "payout_list": {
+        "has_more": true,
+        "meta": {
+            "page": 1,
+            "per_page": 2,
+            "total": 3,
+            "total_pages": 2,
+            "has_more": true
+        },
+        "items": [
+            {
+                "id": 12345,
+                "type": "standard",
+                "state": 1,
+                "is_waiting": false,
+                "is_processed": true,
+                "is_failed": false,
+                "net": {
+                    "minor": 2715,
+                    "currency": "EUR"
+                },
+                "fee": {
+                    "minor": 306,
+                    "currency": "EUR"
+                },
+                "gross": {
+                    "minor": 3021,
+                    "currency": "EUR"
+                },
+                "currency": "EUR",
+                "creation_date": "2026-08-01 10:00:00",
+                "export_date": "2026-08-01 14:20:00",
+                "declined": false
+            },
+            {
+                "id": 12346,
+                "type": null,
+                "state": -1,
+                "is_waiting": false,
+                "is_processed": false,
+                "is_failed": true,
+                "net": {
+                    "minor": 550,
+                    "currency": "PLN"
+                },
+                "fee": {
+                    "minor": 0,
+                    "currency": "PLN"
+                },
+                "gross": {
+                    "minor": 0,
+                    "currency": "PLN"
+                },
+                "currency": "PLN",
+                "creation_date": null,
+                "export_date": null,
+                "declined": true
+            }
+        ]
+    },
+    "payout_settlement": {
+        "settlement": {
+            "id": 7,
+            "state": 0,
+            "currency": "EUR",
+            "net": {
+                "minor": 1000,
+                "currency": "EUR"
+            },
+            "fee": {
+                "minor": 0,
+                "currency": "EUR"
+            },
+            "gross": {
+                "minor": 1000,
+                "currency": "EUR"
+            },
+            "export_date": "2026-08-01 14:20:00",
+            "paysafecard": true,
+            "receiver_amount": {
+                "minor": 1000,
+                "currency": "EUR"
+            }
+        },
+        "summary_net": {
+            "minor": 1000,
+            "currency": "EUR"
+        },
+        "summary_fee": {
+            "minor": 0,
+            "currency": "EUR"
+        },
+        "summary_gross": {
+            "minor": 1000,
+            "currency": "EUR"
+        },
+        "summary_count": 1,
+        "meta": {
+            "page": 1,
+            "per_page": 100,
+            "total": 1,
+            "total_pages": 1,
+            "has_more": false
+        },
+        "positions": [
+            {
+                "payment_id": "P-1",
+                "date": "2026-07-31 12:04:11",
+                "net": {
+                    "minor": 905,
+                    "currency": "EUR"
+                },
+                "fee": {
+                    "minor": 102,
+                    "currency": "EUR"
+                },
+                "gross": {
+                    "minor": 1007,
+                    "currency": "EUR"
+                },
+                "service_id": 42,
+                "service_name": "Sklep testowy",
+                "custom": "order-1234",
+                "ipksef": null
+            },
+            {
+                "payment_id": null,
+                "date": null,
+                "net": {
+                    "minor": 0,
+                    "currency": "EUR"
+                },
+                "fee": {
+                    "minor": 0,
+                    "currency": "EUR"
+                },
+                "gross": {
+                    "minor": 0,
+                    "currency": "EUR"
+                },
+                "service_id": null,
+                "service_name": null,
+                "custom": null,
+                "ipksef": null
+            }
+        ]
+    },
+    "webhook_payment_typed": {
+        "payment": {
+            "id": "8F2A11C4-5B6D-4E7F-8A9B-0C1D2E3F4A5B",
+            "status": "succeeded",
+            "currency": "PLN",
+            "amount": {
+                "minor": 14900,
+                "currency": "PLN"
+            },
+            "amount_refunded": {
+                "minor": 0,
+                "currency": "PLN"
+            },
+            "amount_captured": {
+                "minor": 0,
+                "currency": "PLN"
+            },
+            "description": "Order 2026/09/123",
+            "created": "2026-09-27T10:03:12Z",
+            "paid_at": "2026-09-27T10:05:00Z",
+            "payment_method": {
+                "type": "blik",
+                "blik": {
+                    "flow": "code"
+                }
+            },
+            "payment_method_type": "blik",
+            "failure": null,
+            "is_recurring": false,
+            "recurring_alias": null,
+            "recurring_registration": null,
+            "recurring_sequence": null,
+            "merchant_reference": "2026/09/123",
+            "provider_reference": "1234567890",
+            "custom": "order-789"
+        },
+        "refund": null,
+        "recurring_payment": null,
+        "payout": null
+    },
+    "webhook_payment_failed_typed": {
+        "payment": {
+            "id": "P-2",
+            "status": "failed",
+            "currency": "EUR",
+            "amount": {
+                "minor": 4999,
+                "currency": "EUR"
+            },
+            "amount_refunded": {
+                "minor": 0,
+                "currency": "EUR"
+            },
+            "amount_captured": {
+                "minor": 0,
+                "currency": "EUR"
+            },
+            "description": null,
+            "created": "2026-10-01T08:00:00Z",
+            "paid_at": null,
+            "payment_method": null,
+            "payment_method_type": null,
+            "failure": {
+                "code": "insufficient_funds",
+                "message": "Insufficient funds",
+                "category": "customer",
+                "retryable": true,
+                "provider_code": "51"
+            },
+            "is_recurring": true,
+            "recurring_alias": "SUB-0001",
+            "recurring_registration": "P-1",
+            "recurring_sequence": "subsequent",
+            "merchant_reference": null,
+            "provider_reference": null,
+            "custom": null
+        },
+        "refund": null,
+        "recurring_payment": null,
+        "payout": null
+    },
+    "webhook_refund_typed": {
+        "payment": null,
+        "refund": {
+            "id": null,
+            "payment": "8F2A11C4-5B6D-4E7F-8A9B-0C1D2E3F4A5B",
+            "status": "failed",
+            "currency": "CZK",
+            "amount": {
+                "minor": 2000,
+                "currency": "CZK"
+            },
+            "created": "2026-10-01T08:00:00Z",
+            "succeeded_at": null,
+            "failure": {
+                "code": "refund_window_expired",
+                "message": "The refund period has expired",
+                "category": "merchant",
+                "retryable": false,
+                "provider_code": null
+            }
+        },
+        "recurring_payment": null,
+        "payout": null
+    },
+    "webhook_recurring_typed": {
+        "payment": null,
+        "refund": null,
+        "recurring_payment": {
+            "id": "P-1",
+            "alias": "SUB-0001",
+            "status": "canceled",
+            "canceled_by": "customer",
+            "payment_method": {
+                "type": "blik",
+                "blik": {
+                    "flow": "recurring"
+                }
+            },
+            "payment_method_type": "blik",
+            "model": "A",
+            "frequency": "1M",
+            "limit_amount": 5999,
+            "total_limit_amount": null,
+            "starts_on": "2026-11-01",
+            "expires_on": "2027-09-30",
+            "created": "2026-09-26T10:00:00Z"
+        },
+        "payout": null
+    },
+    "webhook_payout_typed": {
+        "payment": null,
+        "refund": null,
+        "recurring_payment": null,
+        "payout": {
+            "id": "12345",
+            "status": "failed",
+            "currency": "PLN",
+            "amount": {
+                "minor": 2715,
+                "currency": "PLN"
+            },
+            "fee": {
+                "minor": 0,
+                "currency": "PLN"
+            },
+            "bank_account_last4": "2874",
+            "created": "2026-08-01T08:00:00Z",
+            "paid_at": null,
+            "failure": {
+                "code": "generic_decline",
+                "message": null,
+                "category": null,
+                "retryable": false,
+                "provider_code": "RETURNED"
+            }
+        }
+    },
+    "webhook_fallback_typed": {
+        "payment": {
+            "id": "",
+            "status": null,
+            "currency": "PLN",
+            "amount": {
+                "minor": 0,
+                "currency": "PLN"
+            },
+            "amount_refunded": {
+                "minor": 0,
+                "currency": "PLN"
+            },
+            "amount_captured": {
+                "minor": 0,
+                "currency": "PLN"
+            },
+            "description": null,
+            "created": null,
+            "paid_at": null,
+            "payment_method": null,
+            "payment_method_type": null,
+            "failure": {
+                "code": "generic_decline",
+                "message": null,
+                "category": null,
+                "retryable": false,
+                "provider_code": null
+            },
+            "is_recurring": true,
+            "recurring_alias": null,
+            "recurring_registration": null,
+            "recurring_sequence": null,
+            "merchant_reference": null,
+            "provider_reference": null,
+            "custom": null
+        },
+        "refund": null,
+        "recurring_payment": null,
+        "payout": null
+    },
+    "webhook_event_typed": {
+        "payment": {
+            "id": "tx-1",
+            "status": null,
+            "currency": "PLN",
+            "amount": {
+                "minor": 2999,
+                "currency": "PLN"
+            },
+            "amount_refunded": {
+                "minor": 0,
+                "currency": "PLN"
+            },
+            "amount_captured": {
+                "minor": 0,
+                "currency": "PLN"
+            },
+            "description": null,
+            "created": null,
+            "paid_at": null,
+            "payment_method": null,
+            "payment_method_type": null,
+            "failure": null,
+            "is_recurring": false,
+            "recurring_alias": null,
+            "recurring_registration": null,
+            "recurring_sequence": null,
+            "merchant_reference": null,
+            "provider_reference": null,
+            "custom": null
+        },
+        "refund": null,
+        "recurring_payment": null,
+        "payout": null
+    },
+    "card_apple_session": {
+        "session": {
+            "epochTimestamp": 1790503500000,
+            "merchantSessionIdentifier": "SSH-1"
+        }
+    },
+    "card_declined": {
+        "error_code": "Payment declined",
+        "card_error": {
+            "code": "payment_declined",
+            "decline_code": "05",
+            "decline_message": "Do not honor"
+        }
+    },
+    "card_declined_plain": {
+        "error_code": "DCC_OFFER_EXPIRED",
+        "card_error": null
     }
 }

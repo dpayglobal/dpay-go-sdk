@@ -117,7 +117,7 @@ func TestRecurringRetryReturnsThePendingRetry(t *testing.T) {
 	if *sent != want {
 		t.Fatalf("body = %s\nwant   %s", *sent, want)
 	}
-	if !result.IsPending() || result.IsFailed() || *result.Count() != 1 || result.TransactionID() != recurringTransactionID {
+	if !result.IsPending() || result.IsFailed() || result.IsSuccess() || *result.Count() != 1 || result.TransactionID() != recurringTransactionID {
 		t.Fatalf("result = %v", result.Raw())
 	}
 }
@@ -145,8 +145,23 @@ func TestRecurringRetryNotAllowedCarriesTheReason(t *testing.T) {
 	if !errors.Is(err, ErrInvalidRequest) || !errors.As(err, &apiErr) {
 		t.Fatalf("err = %v", err)
 	}
-	if apiErr.HTTPStatus != 400 || len(apiErr.FieldErrors["retry"]) != 1 || apiErr.FieldErrors["retry"][0] != "DECLINE_NOT_RETRYABLE" {
+	if apiErr.HTTPStatus != 400 || len(apiErr.FieldErrors["retry"]) != 1 ||
+		RetryRefusal(apiErr.FieldErrors["retry"][0]) != RetryRefusalDeclineNotRetryable ||
+		len(apiErr.FieldErrors["decline_reason"]) != 1 || apiErr.FieldErrors["decline_reason"][0] != "SEC_DECLINED" {
 		t.Fatalf("apiErr = %+v", apiErr)
+	}
+}
+
+func TestRecurringRetrySucceededAtOnce(t *testing.T) {
+	client, _, _ := newVectorClient(t, 200, `{"status":"success","data":{"transactionId":"`+recurringTransactionID+
+		`","retry":{"status":"success","count":1}}}`)
+
+	result, err := client.Recurring.Retry(context.Background(), recurringTransactionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.IsSuccess() || result.IsPending() || result.IsFailed() {
+		t.Fatalf("result = %v", result.Raw())
 	}
 }
 
@@ -196,8 +211,8 @@ func TestRecurringRegistrationValidate(t *testing.T) {
 		want   string
 		modify func(*RecurringRegistration)
 	}{
-		{"Recurring payment label must be 1-50 characters", func(r *RecurringRegistration) { r.Label = "" }},
-		{"Recurring payment label must be 1-50 characters", func(r *RecurringRegistration) { r.Label = strings.Repeat("ł", 51) }},
+		{"Recurring payment label must be 1-35 characters", func(r *RecurringRegistration) { r.Label = "" }},
+		{"Recurring payment label must be 1-35 characters", func(r *RecurringRegistration) { r.Label = strings.Repeat("ł", 36) }},
 		{`Invalid recurring model "B"`, func(r *RecurringRegistration) { r.Model = "B" }},
 		{`Invalid terms URL "not a url"`, func(r *RecurringRegistration) { r.TermsURL = "not a url" }},
 		{`Invalid terms URL ""`, func(r *RecurringRegistration) { r.TermsURL = "" }},
@@ -222,6 +237,11 @@ func TestRecurringRegistrationValidate(t *testing.T) {
 		if err := registration.Validate(); !errors.Is(err, ErrInvalidArgument) || err.Error() != "dpay: "+testCase.want {
 			t.Errorf("err = %v, want %q", err, testCase.want)
 		}
+	}
+	longest := base()
+	longest.Label = strings.Repeat("ż", 35)
+	if err := longest.Validate(); err != nil {
+		t.Errorf("35 characters: %v", err)
 	}
 
 	modelO := base()

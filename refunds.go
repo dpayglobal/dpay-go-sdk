@@ -2,6 +2,9 @@ package dpay
 
 import (
 	"context"
+	"regexp"
+
+	"github.com/dpayglobal/dpay-go-sdk/internal/php"
 
 	"github.com/dpayglobal/dpay-go-sdk/internal/wire"
 )
@@ -16,9 +19,26 @@ type RefundService struct {
 type RefundOption func(*refundOptions)
 
 type refundOptions struct {
-	amount  *Money
-	reason  *string
-	webhook *WebhookTarget
+	amount    *Money
+	reason    *string
+	webhook   *WebhookTarget
+	messageID *string
+}
+
+// RefundMessageIDHeader is the request header with your own refund identifier
+// (WithRefundMessageID); it sets the refund transfer title.
+const RefundMessageIDHeader = "DigitalPayments-PSP-Message-ID"
+
+var refundMessageIDPattern = regexp.MustCompile(`^[\x20-\x7E]+$`)
+
+// WithRefundMessageID sends your own refund identifier in the
+// DigitalPayments-PSP-Message-ID header (RefundMessageIDHeader). It is not part
+// of the body or the checksum: the refund transfer title becomes
+// "dpay.pl zwrot <messageID>" and Refund.Message() returns it. It must be
+// printable ASCII and not only spaces; the API keeps the first 24 characters.
+// Only Create sends it - CheckAvailability ignores it.
+func WithRefundMessageID(messageID string) RefundOption {
+	return func(options *refundOptions) { options.messageID = &messageID }
 }
 
 // WithRefundAmount refunds only part of the transaction.
@@ -75,17 +95,27 @@ func (s *RefundService) Create(ctx context.Context, transactionID string, opts .
 			return nil, err
 		}
 	}
-	data, err := s.client.postJSONObject(ctx, hostPanel, "/api/v1/pbl/refund", s.signedBody(transactionID, options, true))
+	var headers []requestHeader
+	if options.messageID != nil {
+		messageID := *options.messageID
+		if !refundMessageIDPattern.MatchString(messageID) || php.Trim(messageID) == "" {
+			return nil, newValidationError("Refund message ID must be non-empty printable ASCII")
+		}
+		headers = append(headers, requestHeader{name: RefundMessageIDHeader, value: messageID})
+	}
+	data, err := s.client.postJSONObject(ctx, hostPanel, "/api/v1/pbl/refund", s.signedBody(transactionID, options, true), headers...)
 	if err != nil {
 		return nil, err
 	}
 	return refundFromAPI(data), nil
 }
 
-var availabilityOutcomeStatuses = map[int]bool{200: true, 400: true, 402: true, 406: true, 409: true, 410: true, 411: true}
-
-// CheckAvailability reports whether a refund can be issued. Statuses the API
-// uses to express a business outcome are returned as a result, not as an error.
+// CheckAvailability reports whether a refund can be issued. Every answer that
+// carries the refund key - HTTP 200 and the business refusals 400, 402, 404
+// (transaction does not exist), 406, 409, 410, 411, 423 and a business 401 - is
+// returned as RefundAvailability (HTTPStatus tells the reason apart). An
+// invalid checksum (401 "Unauthorized request"), validation errors (422), rate
+// limits and server errors are returned as errors.
 func (s *RefundService) CheckAvailability(ctx context.Context, transactionID string, opts ...RefundOption) (*RefundAvailability, error) {
 	response, err := s.client.sendBody(ctx, "POST", hostPanel,
 		"/api/v1/pbl/check-refund-availability", s.signedBody(transactionID, resolveRefundOptions(opts), false))
@@ -102,14 +132,11 @@ func (s *RefundService) CheckAvailability(ctx context.Context, transactionID str
 }
 
 func isAvailabilityOutcome(status int, data map[string]any) bool {
-	if availabilityOutcomeStatuses[status] {
-		return true
+	if status == 401 {
+		message, ok := data["message"].(string)
+		return !ok || message != "Unauthorized request"
 	}
-	if status != 401 {
-		return false
-	}
-	message, ok := data["message"].(string)
-	return !ok || message != "Unauthorized request"
+	return status == 200 || (status >= 400 && status < 500)
 }
 
 // Refund is the outcome of a refund request.

@@ -246,5 +246,345 @@
         "data": {
             "object": "nope"
         }
+    },
+    "transaction_fees": {
+        "transaction": {
+            "id": "tx-5",
+            "value": "10.00",
+            "status": "paid",
+            "rate": 2,
+            "minimal_fee": 20,
+            "permanent_fee": 0,
+            "urls": {
+                "success": "https://shop.example/ok",
+                "fail": "https://shop.example/fail",
+                "ipn": "https://shop.example/ipn"
+            }
+        }
+    },
+    "transaction_fees_strings": {
+        "transaction": {
+            "id": "tx-6",
+            "value": "10.00",
+            "status": "created",
+            "rate": "1.49",
+            "minimal_fee": "30",
+            "permanent_fee": "x",
+            "urls": {
+                "success": "https://shop.example/ok",
+                "fail": "",
+                "ipn": null
+            }
+        }
+    },
+    "registered_multibanco": {
+        "error": false,
+        "msg": "https://secure.dpay.pl/transfer@pay@ABC",
+        "status": true,
+        "transactionId": "ABC",
+        "multibanco": {
+            "entity": "12345",
+            "reference": 123456789,
+            "amount": "12.50",
+            "currency": "EUR",
+            "expires_at": "2026-11-21T10:00:00+00:00"
+        }
+    },
+    "registered_multibanco_sparse": {
+        "msg": "x",
+        "multibanco": {
+            "entity": 12345,
+            "amount": "x",
+            "currency": "eur"
+        }
+    },
+    "registered_paid_transaction": {
+        "error": false,
+        "msg": "Transaction paid",
+        "status": true,
+        "transactionId": "30D9493D-1D73-3FBD-A5D4-633723CC7A68",
+        "additionalInfo": {
+            "transaction": {
+                "payment_id": "30D9493D-1D73-3FBD-A5D4-633723CC7A68",
+                "pid": null,
+                "mtid": 77,
+                "email": "client@example.com",
+                "description": "Zamówienie #1234",
+                "name": "Jan",
+                "surname": "Kowalski",
+                "value": "10.00",
+                "status": "captured",
+                "creation_date": "2026-11-18 10:00:00",
+                "payment_date": "2026-11-18 10:01:00"
+            }
+        }
+    },
+    "payout_list": {
+        "withdraws": [
+            {
+                "id": 12345,
+                "type": "standard",
+                "state": 1,
+                "net": "27.15",
+                "fee": "3.06",
+                "gross": "30.21",
+                "currency_code": "EUR",
+                "creation_date": "2026-08-01 10:00:00",
+                "export_date": "2026-08-01 14:20:00",
+                "declined": 0
+            },
+            {
+                "id": "12346",
+                "type": null,
+                "state": "-1",
+                "net": 5.5,
+                "fee": "x",
+                "currency_code": "eur",
+                "declined": "1"
+            }
+        ],
+        "meta": {
+            "page": 1,
+            "per_page": 2,
+            "total": 3,
+            "total_pages": 2
+        }
+    },
+    "payout_settlement": {
+        "settlement": {
+            "id": 7,
+            "state": 0,
+            "net": "10.00",
+            "fee": "0.00",
+            "gross": "10.00",
+            "currency_code": "EUR",
+            "creation_date": "2026-08-01 10:00:00",
+            "export_date": "2026-08-01 14:20:00",
+            "direct_settlement": 1,
+            "declined": 0,
+            "paysafecard": "1",
+            "nrb": "PL61109010140000071219812874",
+            "receiver": {
+                "nrb": "PL61109010140000071219812874",
+                "title": "FV 1",
+                "amount": "10.00",
+                "service": "svc",
+                "receiverName": "Firma",
+                "receiverAddress": "Lisboa"
+            }
+        },
+        "summary": {
+            "net": "10.00",
+            "fee": "0.00",
+            "gross": "10.00",
+            "count": "1"
+        },
+        "transactions": [
+            {
+                "payment_id": "P-1",
+                "date": "2026-07-31 12:04:11",
+                "net": "9.05",
+                "fee": "1.02",
+                "gross": "10.07",
+                "service_id": 42,
+                "service_name": "Sklep testowy",
+                "custom": "order-1234",
+                "ipksef": null
+            },
+            {
+                "payment_id": 5,
+                "date": null,
+                "net": "x",
+                "service_id": "42"
+            }
+        ],
+        "meta": {
+            "page": 1,
+            "per_page": 100,
+            "total": 1,
+            "total_pages": 1
+        }
+    },
+    "webhook_payment": {
+        "id": "evt_01k6a8q2m4pz7h8c3v5n9t2x6y",
+        "type": "payment.succeeded",
+        "data": {
+            "object": {
+                "object": "payment",
+                "id": "8F2A11C4-5B6D-4E7F-8A9B-0C1D2E3F4A5B",
+                "status": "succeeded",
+                "amount": 14900,
+                "currency": "PLN",
+                "amount_refunded": 0,
+                "amount_captured": 0,
+                "description": "Order 2026/09/123",
+                "created": "2026-09-27T10:03:12Z",
+                "paid_at": "2026-09-27T10:05:00Z",
+                "payment_method": {
+                    "type": "blik",
+                    "blik": {
+                        "flow": "code"
+                    }
+                },
+                "failure": null,
+                "recurring": null,
+                "references": {
+                    "merchant": "2026/09/123",
+                    "provider": "1234567890"
+                },
+                "custom": "order-789"
+            }
+        }
+    },
+    "webhook_payment_failed": {
+        "id": "evt_2",
+        "type": "payment.failed",
+        "data": {
+            "object": {
+                "object": "payment",
+                "id": "P-2",
+                "status": "failed",
+                "amount": 4999,
+                "currency": "EUR",
+                "amount_refunded": 0,
+                "amount_captured": 0,
+                "description": null,
+                "created": "2026-10-01T08:00:00Z",
+                "paid_at": null,
+                "payment_method": null,
+                "failure": {
+                    "code": "insufficient_funds",
+                    "message": "Insufficient funds",
+                    "category": "customer",
+                    "retryable": true,
+                    "provider_code": 51
+                },
+                "recurring": {
+                    "alias": "SUB-0001",
+                    "registration": "P-1",
+                    "sequence": "subsequent"
+                },
+                "references": {
+                    "merchant": null,
+                    "provider": null
+                },
+                "custom": null
+            }
+        }
+    },
+    "webhook_refund": {
+        "id": "evt_3",
+        "type": "refund.failed",
+        "data": {
+            "object": {
+                "object": "refund",
+                "id": null,
+                "payment": "8F2A11C4-5B6D-4E7F-8A9B-0C1D2E3F4A5B",
+                "status": "failed",
+                "amount": 2000,
+                "currency": "CZK",
+                "created": "2026-10-01T08:00:00Z",
+                "succeeded_at": null,
+                "failure": {
+                    "code": "refund_window_expired",
+                    "message": "The refund period has expired",
+                    "category": "merchant",
+                    "retryable": false,
+                    "provider_code": null
+                }
+            }
+        }
+    },
+    "webhook_recurring": {
+        "id": "evt_4",
+        "type": "recurring_payment.canceled",
+        "data": {
+            "object": {
+                "object": "recurring_payment",
+                "id": "P-1",
+                "alias": "SUB-0001",
+                "status": "canceled",
+                "canceled_by": "customer",
+                "payment_method": {
+                    "type": "blik",
+                    "blik": {
+                        "flow": "recurring"
+                    }
+                },
+                "terms": {
+                    "model": "A",
+                    "frequency": "1M",
+                    "limit_amount": 5999,
+                    "total_limit_amount": "71988",
+                    "starts_on": "2026-11-01",
+                    "expires_on": "2027-09-30"
+                },
+                "created": "2026-09-26T10:00:00Z"
+            }
+        }
+    },
+    "webhook_payout": {
+        "id": "evt_5",
+        "type": "payout.failed",
+        "data": {
+            "object": {
+                "object": "payout",
+                "id": 12345,
+                "status": "failed",
+                "amount": 2715,
+                "fee": "306",
+                "currency": "PLN",
+                "bank_account": {
+                    "last4": "2874"
+                },
+                "created": "2026-08-01T08:00:00Z",
+                "paid_at": null,
+                "failure": {
+                    "code": "",
+                    "message": null,
+                    "category": 5,
+                    "retryable": "true",
+                    "provider_code": "RETURNED"
+                }
+            }
+        }
+    },
+    "webhook_fallback": {
+        "id": "evt_6",
+        "type": "payment.failed",
+        "data": {
+            "object": {
+                "object": "payment",
+                "currency": "xx",
+                "amount": "100",
+                "failure": {
+                    "code": ""
+                },
+                "recurring": [],
+                "payment_method": "blik"
+            }
+        }
+    },
+    "card_apple_session": {
+        "success": true,
+        "message": {
+            "redirectType": "FORM",
+            "redirectText": "eyJlcG9jaFRpbWVzdGFtcCI6MTc5MDUwMzUwMDAwMCwibWVyY2hhbnRTZXNzaW9uSWRlbnRpZmllciI6IlNTSC0xIn0="
+        }
+    },
+    "card_declined": {
+        "success": false,
+        "status": "error",
+        "message": "Payment declined",
+        "error": {
+            "code": "payment_declined",
+            "declineCode": "05",
+            "declineMessage": "Do not honor"
+        }
+    },
+    "card_declined_plain": {
+        "success": false,
+        "status": "error",
+        "message": "DCC_OFFER_EXPIRED"
     }
 }

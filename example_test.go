@@ -49,8 +49,16 @@ func ExampleVerifyIPN() {
 			http.Error(w, "invalid signature", http.StatusBadRequest)
 			return
 		}
-		if event.IsTransfer() {
+		switch {
+		case event.IsTransfer():
 			markOrderAsPaid(event.ID(), event.Amount())
+		case event.IsAliasUpdate():
+			// Without an alias IPN URL alias changes come here too. Their alias
+			// fields are not signed: confirm the state before acting on it.
+			alias := event.AliasUpdate()
+			if alias.AliasType() == dpay.AliasTypePayID && !alias.IsActive() {
+				fmt.Println("check client.Recurring.Status for payment", event.ID())
+			}
 		}
 		fmt.Fprint(w, dpay.IPNAck)
 	}
@@ -125,6 +133,22 @@ func ExampleEventService_Iterate() {
 	}
 }
 
+func ExamplePayoutService_Iterate() {
+	client, _ := dpay.New("my_shop", "secret_hash")
+	processed := dpay.PayoutStateProcessed
+	payouts := client.Payouts.Iterate(context.Background(), &dpay.PayoutListParams{
+		DateFrom: dpay.String("2026-08-01"),
+		State:    &processed,
+	})
+	for payouts.Next() {
+		payout := payouts.Payout()
+		fmt.Println(payout.ID(), payout.Net(), payout.Currency())
+	}
+	if err := payouts.Err(); err != nil {
+		fmt.Println(err)
+	}
+}
+
 func ExampleAPIError() {
 	client, _ := dpay.New("my_shop", "secret_hash")
 	_, err := client.Payments.Details(context.Background(), "tx-1")
@@ -138,6 +162,9 @@ func ExampleAPIError() {
 		var apiErr *dpay.APIError
 		if errors.As(err, &apiErr) {
 			fmt.Println(apiErr.HTTPStatus, apiErr.FieldErrors)
+			if apiErr.CardError != nil {
+				fmt.Println("card declined:", apiErr.CardError.DeclineCode, apiErr.TransactionID)
+			}
 		}
 	}
 }
