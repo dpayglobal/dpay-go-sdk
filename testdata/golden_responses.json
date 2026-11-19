@@ -445,7 +445,7 @@
                 "currency": "PLN",
                 "creation_date": null,
                 "export_date": null,
-                "declined": true
+                "declined": false
             }
         ]
     },
@@ -467,7 +467,7 @@
                 "currency": "EUR"
             },
             "export_date": "2026-08-01 14:20:00",
-            "paysafecard": true,
+            "paysafecard": false,
             "receiver_amount": {
                 "minor": 1000,
                 "currency": "EUR"

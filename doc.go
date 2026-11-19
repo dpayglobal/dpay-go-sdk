@@ -20,5 +20,14 @@ the API, so the payment status is unknown.
 
 The order of fields in a request body is part of the protocol: the checksum is
 computed from the values in the order they are sent.
+
+The panel API (Refunds, Payments.Details, Banks.ForService, Payouts) trims
+every request string before it verifies the checksum - ASCII whitespace and NUL,
+but also Unicode spaces (e.g. U+00A0, U+3000) and invisible characters (e.g.
+U+200B, U+FEFF). The SDK sends and signs those values (the service name too)
+already trimmed the same way, so " 2026-08-01\n" reaches the API as
+"2026-08-01". A transaction ID, service name or date with nothing left is an
+ErrInvalidArgument ("transaction_id must not be empty"); a refund reason with
+nothing left is sent empty. Payments API requests are not trimmed.
 */
 package dpay

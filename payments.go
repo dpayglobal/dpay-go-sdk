@@ -48,12 +48,19 @@ func (s *PaymentService) Register(ctx context.Context, request *RegisterPaymentR
 
 // Details reads the current state of a transaction.
 func (s *PaymentService) Details(ctx context.Context, transactionID string) (*Transaction, error) {
+	service, err := s.client.panelService()
+	if err != nil {
+		return nil, err
+	}
+	transactionID, err = requiredPanelString(transactionID, "transaction_id")
+	if err != nil {
+		return nil, err
+	}
 	body := wire.NewBody()
-	body.Set("service", s.client.service)
+	body.Set("service", service)
 	body.Set("transaction_id", transactionID)
-	body.Set("checksum", s.client.checksum.OrderedBody(body))
 
-	data, err := s.client.postJSONObject(ctx, hostPanel, "/api/v1/pbl/details", body)
+	data, err := s.client.postJSONObject(ctx, hostPanel, "/api/v1/pbl/details", s.client.signPanelBody(body))
 	if err != nil {
 		return nil, err
 	}

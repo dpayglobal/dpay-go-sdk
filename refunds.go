@@ -68,26 +68,37 @@ func resolveRefundOptions(opts []RefundOption) *refundOptions {
 	return options
 }
 
-func (s *RefundService) signedBody(transactionID string, options *refundOptions, withWebhook bool) *wire.Body {
+func (s *RefundService) signedBody(transactionID string, options *refundOptions, withWebhook bool) (*wire.Body, error) {
+	service, err := s.client.panelService()
+	if err != nil {
+		return nil, err
+	}
+	transactionID, err = requiredPanelString(transactionID, "transaction_id")
+	if err != nil {
+		return nil, err
+	}
 	body := wire.NewBody()
-	body.Set("service", s.client.service)
+	body.Set("service", service)
 	body.Set("transaction_id", transactionID)
 	if options.amount != nil {
 		body.Set("value", options.amount.String())
 	}
 	if options.reason != nil {
+		// Blank after trimming is sent as "" - the API turns it into null and hashes an empty segment
 		body.Set("reason", *options.reason)
 	}
 	if withWebhook && options.webhook != nil {
 		body.Set("webhook", options.webhook.toBody())
 	}
-	body.Set("checksum", s.client.checksum.OrderedBody(body))
-	return body
+	return s.client.signPanelBody(body), nil
 }
 
 // Create orders a refund, in full unless WithRefundAmount narrows it. A
 // successful response means dpay accepted the refund; its outcome comes as a
-// refund.succeeded or refund.failed webhook event.
+// refund.succeeded or refund.failed webhook event. The transaction ID, reason
+// and webhook URL are sent and signed trimmed, as the API trims them before it
+// verifies the checksum (see the package documentation); a reason that is blank after trimming is sent as "", a blank
+// transaction ID is an ErrInvalidArgument.
 func (s *RefundService) Create(ctx context.Context, transactionID string, opts ...RefundOption) (*Refund, error) {
 	options := resolveRefundOptions(opts)
 	if options.webhook != nil {
@@ -103,22 +114,32 @@ func (s *RefundService) Create(ctx context.Context, transactionID string, opts .
 		}
 		headers = append(headers, requestHeader{name: RefundMessageIDHeader, value: messageID})
 	}
-	data, err := s.client.postJSONObject(ctx, hostPanel, "/api/v1/pbl/refund", s.signedBody(transactionID, options, true), headers...)
+	body, err := s.signedBody(transactionID, options, true)
+	if err != nil {
+		return nil, err
+	}
+	data, err := s.client.postJSONObject(ctx, hostPanel, "/api/v1/pbl/refund", body, headers...)
 	if err != nil {
 		return nil, err
 	}
 	return refundFromAPI(data), nil
 }
 
-// CheckAvailability reports whether a refund can be issued. Every answer that
-// carries the refund key - HTTP 200 and the business refusals 400, 402, 404
-// (transaction does not exist), 406, 409, 410, 411, 423 and a business 401 - is
-// returned as RefundAvailability (HTTPStatus tells the reason apart). An
-// invalid checksum (401 "Unauthorized request"), validation errors (422), rate
-// limits and server errors are returned as errors.
+// CheckAvailability reports whether a refund can be issued. The answer is
+// decided by the body, not by a list of statuses: HTTP 200 and every 4xx whose
+// JSON body carries the refund key are returned as RefundAvailability
+// (HTTPStatus tells the reason apart) - today the business refusals 400, 402,
+// 404 (transaction does not exist), 406, 409, 410, 411, 423 and a business 401.
+// Returned as errors: 401 "Unauthorized request" (invalid checksum), every
+// response without the refund key - which is how the API answers validation
+// errors (422) and rate limits (429) - and every 5xx, even with the refund key.
+// The transaction ID and reason are trimmed like in Create.
 func (s *RefundService) CheckAvailability(ctx context.Context, transactionID string, opts ...RefundOption) (*RefundAvailability, error) {
-	response, err := s.client.sendBody(ctx, "POST", hostPanel,
-		"/api/v1/pbl/check-refund-availability", s.signedBody(transactionID, resolveRefundOptions(opts), false))
+	body, err := s.signedBody(transactionID, resolveRefundOptions(opts), false)
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.client.sendBody(ctx, "POST", hostPanel, "/api/v1/pbl/check-refund-availability", body)
 	if err != nil {
 		return nil, err
 	}

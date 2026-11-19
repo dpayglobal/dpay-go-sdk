@@ -12,8 +12,9 @@ Wersja dogania dokumentację API dpay (OpenAPI 1.6.0) i działa z obecnym API - 
 
 - **BREAKING** `Refunds.CheckAvailability()` zwraca `RefundAvailability` (niedostępny) zamiast błędu dla każdej
   odpowiedzi 4xx z kluczem `refund`, w tym 404 (transakcja nie istnieje, wcześniej `ErrNotFound`) i 423 (zwrot
-  przez BOK dpay). Przyczynę rozróżnia `HTTPStatus()`. Nadal są błędami: 401 "Unauthorized request"
-  (`ErrAuthentication`), 422, 429 i 5xx.
+  przez BOK dpay). Przyczynę rozróżnia `HTTPStatus()`. Rozstrzyga treść odpowiedzi, nie lista kodów. Nadal są
+  błędami: 401 "Unauthorized request" (`ErrAuthentication`), każda odpowiedź bez klucza `refund` - tak API
+  odpowiada na 422 (walidacja) i 429 (limit zapytań) - oraz każde 5xx.
 - **BREAKING** Waluta kwoty trafia do `currency_code`: `Money` w walucie innej niż PLN wysyła `currency_code`
   bez `CurrencyCode` (wcześniej np. `dpay.NewMoney(49900, dpay.CurrencyCZK)` rejestrowało 499.00 w walucie
   domyślnej serwisu). `CurrencyCode` (także razem z `PhoneNumber`) różny od waluty kwoty kończy się błędem
@@ -34,11 +35,13 @@ Wersja dogania dokumentację API dpay (OpenAPI 1.6.0) i działa z obecnym API - 
   `APIError.TransactionID`: z obiektu `error` odmowy karty (`*CardPaymentError`) i z pól `cardError`
   i `transactionId` błędu Payments API (np. odrzucone pobranie na zapisanej karcie).
 - `client.Payouts.List()` i `Iterate()` (`POST /api/v1/pbl/withdraws`, `PayoutListParams`: `DateFrom`,
-  `DateTo`, `State`, `Type`, strony do 200; `PayoutIterator`) oraz `DetailsFull()`
+  `DateTo`, `State`, `Type`, strony do 200; `PayoutIterator`; nieprawidłowa wartość filtra lub pusta data
+  kończy się błędem `ErrInvalidArgument`) oraz `DetailsFull()`
   (`POST /api/v1/pbl/withdraws/details/full`: nagłówek, sumy całego rozliczenia i pozycje z `payment_id`,
   `custom`, `ipksef`, strony do 500, `PayoutPageParams`); modele `PayoutPage`, `PayoutListItem`,
   `PayoutSettlement`, `SettlementPosition`, `PageMeta` i typy `PayoutState`, `PayoutType`.
-- `PayoutDetails.Currency()` (z `currency_code`, PLN gdy go brak), `ExportDate()` i `IsPaysafecard()`.
+- `PayoutDetails.Currency()` (z `currency_code`, PLN gdy go brak), `ExportDate()` i `IsPaysafecard()`
+  (prawda tylko dla liczby całkowitej JSON `1`, jak `PayoutListItem.IsDeclined()`).
 - `WithRefundMessageID()` dla `Refunds.Create()` - nagłówek `DigitalPayments-PSP-Message-ID`
   (`RefundMessageIDHeader`; tytuł przelewu `dpay.pl zwrot {messageID}`, poza sumą kontrolną).
 - `RegisteredPayment.Multibanco()` (`MultibancoReference`: encja, referencja, kwota, ważność)
@@ -52,8 +55,9 @@ Wersja dogania dokumentację API dpay (OpenAPI 1.6.0) i działa z obecnym API - 
 - `ApplePayRequest.Email` i `CardPaymentResult.ApplePayMerchantSession()` (sesja ApplePayMerchantSession
   z `redirectText` odpowiedzi APPLE_PAY_INIT).
 - `RateLimitError.Reset` (nagłówek `X-RateLimit-Reset`), `CurrencyUSD` i `CurrencyRON`, `IsValidPolishIBAN()`.
-- `testdata/api_vectors.json`: wektory IPN transfer, dcb i alias_update oraz sum list i szczegółów wypłat;
-  golden z SDK PHP 0.3.0 (39 wywołań i modele odpowiedzi 0.3.0).
+- `testdata/api_vectors.json`: wektory IPN transfer, dcb i alias_update, sum list i szczegółów wypłat oraz
+  `server_trim` (przycinanie łańcuchów przez API panelu: wejście, wysłane body, suma kontrolna); golden z SDK
+  PHP 0.3.0 (39 wywołań i modele odpowiedzi 0.3.0).
 
 ### Changed
 
@@ -73,6 +77,27 @@ Wersja dogania dokumentację API dpay (OpenAPI 1.6.0) i działa z obecnym API - 
   `PaymentRejectedError.TransactionID` zostaje, z tą samą wartością).
 - Dodatkowe nagłówki żądania (dziś `DigitalPayments-PSP-Message-ID`) idą z nazwą dokładnie taką, jak w SDK PHP;
   nazwa spoza `[A-Za-z0-9-]` albo wartość ze znakiem sterującym kończy się błędem `ErrInvalidArgument`.
+- Pusty identyfikator transakcji w `Refunds.Create()`, `Refunds.CheckAvailability()` i `Payments.Details()`
+  kończy się błędem `ErrInvalidArgument` (`transaction_id must not be empty`) zamiast wysłania żądania, które API
+  odrzuca kodem 422.
+
+### Fixed
+
+- Żądania API panelu (`/api/v1/pbl/*`: zwroty, `Payments.Details()`, `Banks.ForService()`, wypłaty) wysyłają
+  i podpisują każdy łańcuch przycięty tak jak API (globalne `TrimStrings` Laravel 13, `Str::trim()`: białe znaki
+  ASCII, NUL, spacje Unicode i znaki niewidoczne, np. U+00A0, U+200B, U+FEFF - 65 punktów kodowych; to nie jest
+  `strings.TrimSpace`) - wcześniej identyfikator transakcji, powód zwrotu, nazwa serwisu lub data filtra z takim
+  znakiem na brzegu kończyły się 401 "Unauthorized request" (daty filtra były przycinane tylko z białych znaków
+  ASCII). Powód, z którego nic nie zostaje, jest wysyłany jako `""` (API liczy go jako pusty segment); pusta po
+  przycięciu nazwa serwisu, identyfikator transakcji lub data filtra kończą się błędem `ErrInvalidArgument`.
+  Żądania API płatności (`api-payments`) bez zmian.
+- `PayoutDetails.IsDirectSettlement()` i `IsDeclined()` oraz `PayoutListItem.IsDeclined()` są prawdziwe tylko
+  dla liczby całkowitej JSON `1` (tak wysyła API) - wcześniej także np. dla `"1"`, `"1abc"` czy `true`
+  (`encoding/json` nie odróżnia `1.0` od `1`, więc `1.0` nadal liczy się jako `1`).
+- Wzorce walidacji w Go były już kotwiczone na końcu ciągu (`$` bez `(?m)`, `\d` tylko ASCII), więc końcowe
+  `"\n"` nie przechodziło - w przeciwieństwie do SDK PHP przed tą poprawką. Testy potwierdzają to dla nazwy
+  nagłówka, identyfikatora zwrotu, karty, dat, `Money`, waluty, BLIK, `PartnerPlatform`, częstotliwości,
+  `StartingAfter`, nagłówka `webhook-timestamp` i `Transaction.MinimalFee()`/`PermanentFee()`.
 
 ## [0.2.0] - wydanie razem z wdrożeniem API dpay
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dpayglobal/dpay-go-sdk/internal/php"
 	"github.com/dpayglobal/dpay-go-sdk/internal/wire"
 )
 
@@ -16,15 +15,18 @@ type PayoutService struct {
 // Details reads a payout by its withdraw identifier. Without WithTimestamp no
 // timestamp field is sent at all, matching the PHP SDK.
 func (s *PayoutService) Details(ctx context.Context, withdrawID int64, opts ...TimestampOption) (*PayoutDetails, error) {
+	service, err := s.client.panelService()
+	if err != nil {
+		return nil, err
+	}
 	body := wire.NewBody()
-	body.Set("service", s.client.service)
+	body.Set("service", service)
 	if len(opts) > 0 {
 		body.Set("timestamp", resolveTimestamp(opts))
 	}
 	body.Set("withdraw_id", withdrawID)
-	body.Set("checksum", s.client.checksum.OrderedBody(body))
 
-	data, err := s.client.postJSONObject(ctx, hostPanel, "/api/v1/pbl/withdraws/details", body)
+	data, err := s.client.postJSONObject(ctx, hostPanel, "/api/v1/pbl/withdraws/details", s.client.signPanelBody(body))
 	if err != nil {
 		return nil, err
 	}
@@ -66,8 +68,12 @@ func (s *PayoutService) List(ctx context.Context, params *PayoutListParams) (*Pa
 	if params != nil {
 		filters = *params
 	}
+	service, err := s.client.panelService()
+	if err != nil {
+		return nil, err
+	}
 	body := wire.NewBody()
-	body.Set("service", s.client.service)
+	body.Set("service", service)
 	for _, date := range []struct {
 		name  string
 		value *string
@@ -76,9 +82,9 @@ func (s *PayoutService) List(ctx context.Context, params *PayoutListParams) (*Pa
 			continue
 		}
 		// The API trims strings before it verifies the checksum - an untrimmed value would fail with 401
-		trimmed := php.Trim(*date.value)
-		if trimmed == "" {
-			return nil, newValidationError(date.name + " must not be empty")
+		trimmed, err := requiredPanelString(*date.value, date.name)
+		if err != nil {
+			return nil, err
 		}
 		body.Set(date.name, trimmed)
 	}
@@ -97,9 +103,7 @@ func (s *PayoutService) List(ctx context.Context, params *PayoutListParams) (*Pa
 	if err := setPage(body, filters.Page, filters.PerPage, 200); err != nil {
 		return nil, err
 	}
-	body.Set("checksum", s.client.checksum.OrderedBody(body))
-
-	data, err := s.client.postJSONObject(ctx, hostPanel, "/api/v1/pbl/withdraws", body)
+	data, err := s.client.postJSONObject(ctx, hostPanel, "/api/v1/pbl/withdraws", s.client.signPanelBody(body))
 	if err != nil {
 		return nil, err
 	}
@@ -130,17 +134,20 @@ func (s *PayoutService) Iterate(ctx context.Context, params *PayoutListParams) *
 // checksum in the order service, withdraw_id, page, per_page. A nil page asks
 // for the first page with the default size. A missing payout is ErrNotFound.
 func (s *PayoutService) DetailsFull(ctx context.Context, withdrawID int64, page *PayoutPageParams) (*PayoutSettlement, error) {
+	service, err := s.client.panelService()
+	if err != nil {
+		return nil, err
+	}
 	body := wire.NewBody()
-	body.Set("service", s.client.service)
+	body.Set("service", service)
 	body.Set("withdraw_id", withdrawID)
 	if page != nil {
 		if err := setPage(body, page.Page, page.PerPage, 500); err != nil {
 			return nil, err
 		}
 	}
-	body.Set("checksum", s.client.checksum.OrderedBody(body))
 
-	data, err := s.client.postJSONObject(ctx, hostPanel, "/api/v1/pbl/withdraws/details/full", body)
+	data, err := s.client.postJSONObject(ctx, hostPanel, "/api/v1/pbl/withdraws/details/full", s.client.signPanelBody(body))
 	if err != nil {
 		return nil, err
 	}
@@ -316,8 +323,8 @@ func (p *PayoutListItem) CreationDate() string { return strictString(p.raw, "cre
 // ExportDate returns when the payout was sent to the bank, empty before.
 func (p *PayoutListItem) ExportDate() string { return strictString(p.raw, "export_date") }
 
-// IsDeclined reports whether the payout was declined.
-func (p *PayoutListItem) IsDeclined() bool { return numericInt(p.raw, "declined", 0) == 1 }
+// IsDeclined reports whether the payout was declined: declined is the JSON integer 1.
+func (p *PayoutListItem) IsDeclined() bool { return isJSONIntegerOne(p.raw["declined"]) }
 
 // Raw returns the decoded payout row.
 func (p *PayoutListItem) Raw() map[string]any { return p.raw }
@@ -443,9 +450,9 @@ func payoutDetailsFromAPI(data map[string]any) *PayoutDetails {
 		fee:              moneyField(data, "fee", currency),
 		gross:            moneyField(data, "gross", currency),
 		creationDate:     stringField(data, "creation_date"),
-		directSettlement: intField(data, "direct_settlement") == 1,
+		directSettlement: isJSONIntegerOne(data["direct_settlement"]),
 		nrb:              stringField(data, "nrb"),
-		declined:         intField(data, "declined") == 1,
+		declined:         isJSONIntegerOne(data["declined"]),
 		declineReason:    stringField(data, "decline_reason"),
 		declineStatus:    stringField(data, "decline_status"),
 	}
@@ -490,19 +497,18 @@ func (p *PayoutDetails) CreationDate() string { return p.creationDate }
 // empty when the API sent none.
 func (p *PayoutDetails) ExportDate() string { return strictString(p.raw, "export_date") }
 
-// IsPaysafecard reports whether this is a paysafecard payout.
-func (p *PayoutDetails) IsPaysafecard() bool {
-	value, exists := p.raw["paysafecard"]
-	return exists && php.IsScalar(value) && php.Int(value) == 1
-}
+// IsPaysafecard reports whether this is a paysafecard payout: paysafecard is
+// the JSON integer 1 (sent only for regular, non-direct settlements).
+func (p *PayoutDetails) IsPaysafecard() bool { return isJSONIntegerOne(p.raw["paysafecard"]) }
 
-// IsDirectSettlement reports whether this was a direct settlement.
+// IsDirectSettlement reports whether this was a direct settlement
+// (direct_settlement is the JSON integer 1).
 func (p *PayoutDetails) IsDirectSettlement() bool { return p.directSettlement }
 
 // NRB returns the account number the payout was sent to.
 func (p *PayoutDetails) NRB() string { return p.nrb }
 
-// IsDeclined reports whether the payout was declined.
+// IsDeclined reports whether the payout was declined (declined is the JSON integer 1).
 func (p *PayoutDetails) IsDeclined() bool { return p.declined }
 
 // DeclineReason returns why the payout was declined.

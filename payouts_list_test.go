@@ -294,8 +294,8 @@ func TestPayoutDetailsFullValidatesPerPageAndMapsNotFound(t *testing.T) {
 
 func TestPayoutListItemFallbacks(t *testing.T) {
 	item := payoutListItemFromAPI(map[string]any{"id": "17", "state": "-1", "net": "x", "currency_code": "eur", "declined": "1"})
-	if item.ID() != 17 || !item.IsFailed() || !item.IsDeclined() || item.Currency() != CurrencyPLN || item.Type() != "" {
-		t.Fatalf("item = %+v", item.Raw())
+	if item.ID() != 17 || !item.IsFailed() || item.IsDeclined() || item.Currency() != CurrencyPLN || item.Type() != "" {
+		t.Fatalf("item = %+v - declined \"1\" is not the JSON integer 1", item.Raw())
 	}
 	if !item.Net().Equal(PLN(0)) || !item.Gross().Equal(PLN(0)) {
 		t.Fatal("missing or unparsable amounts are 0 in the payout currency")

@@ -288,9 +288,14 @@ if err == nil && availability.IsAvailable() {
 }
 ```
 
-`CheckAvailability` zwraca wynik (nie błąd) dla każdej odmowy biznesowej z kluczem `refund`: 400, 402,
-404 (transakcja nie istnieje), 406, 409, 410, 411, 423 i biznesowego 401 - przyczynę rozróżnia
-`HTTPStatus()`. Błędna suma kontrolna (401 "Unauthorized request"), 422, 429 i 5xx są błędami.
+`CheckAvailability` rozstrzyga po treści odpowiedzi, nie po liście kodów: HTTP 200 i każda odpowiedź 4xx
+z kluczem `refund` to wynik (nie błąd) - dziś odmowy biznesowe 400, 402, 404 (transakcja nie istnieje), 406,
+409, 410, 411, 423 i biznesowe 401; przyczynę rozróżnia `HTTPStatus()`. Błędem są: błędna suma kontrolna
+(401 "Unauthorized request"), każda odpowiedź bez klucza `refund` - tak API odpowiada na błędy walidacji (422)
+i limit zapytań (429) - oraz każde 5xx, także z kluczem `refund`.
+
+Identyfikator transakcji, powód i adres webhooka są wysyłane i podpisywane bez białych i niewidocznych znaków
+na brzegach - API panelu przycina je przed sprawdzeniem sumy kontrolnej (patrz [Białe znaki](#białe-znaki-w-api-panelu)).
 
 ## Szczegóły transakcji i banki
 
@@ -330,7 +335,18 @@ if err := payouts.Err(); err != nil {
 
 `Payouts.List` zwraca jedną stronę (`PerPage` do 200), `Payouts.DetailsFull` - sumy całego rozliczenia
 (`SummaryNet()`, `SummaryCount()`) i stronę pozycji (`PerPage` do 500). Kwoty są w walucie wypłaty
-(`Currency()`, PLN gdy API jej nie podaje).
+(`Currency()`, PLN gdy API jej nie podaje). Nieznany stan (`State`) lub typ (`Type`) wypłaty i pusta data
+kończą się błędem `ErrInvalidArgument`.
+
+### Białe znaki w API panelu
+
+API panelu (`Refunds`, `Payments.Details()`, `Banks.ForService()`, `Payouts`) przycina każdy łańcuch żądania
+przed sprawdzeniem sumy kontrolnej - spacje, tabulatory i znaki nowej linii, ale też spacje Unicode (np. U+00A0,
+U+3000) i znaki niewidoczne (np. U+200B, U+FEFF); to inny zbiór niż `strings.TrimSpace`. SDK wysyła i podpisuje
+te wartości (także nazwę serwisu) już przycięte, więc `" 2026-08-01\n"` trafia do API jako `"2026-08-01"`.
+Identyfikator transakcji, nazwa serwisu i daty, z których nic nie zostaje, kończą się błędem `ErrInvalidArgument`
+(`transaction_id must not be empty`); powód zwrotu, z którego nic nie zostaje, jest wysyłany jako pusty. Żądania
+API płatności nie są przycinane.
 
 ## Karty S2S
 

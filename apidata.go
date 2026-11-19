@@ -53,6 +53,15 @@ func jsonInt(value any) (int64, bool) {
 	return 0, false
 }
 
+// isJSONIntegerOne reports whether value is the JSON integer 1, the way the API
+// sends its 0/1 payout flags; strings ("1"), booleans and other numbers are
+// false. encoding/json decodes every number as float64, so a JSON 1.0 cannot be
+// told apart and counts as well (like jsonInt).
+func isJSONIntegerOne(value any) bool {
+	integer, ok := jsonInt(value)
+	return ok && integer == 1
+}
+
 // digitsInt converts a string of ASCII digits to an integer (PHP ctype_digit
 // followed by an int cast, which saturates on overflow).
 func digitsInt(value any) (int64, bool) {
