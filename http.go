@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/dpayglobal/dpay-go-sdk/internal/php"
@@ -51,10 +52,26 @@ func lowercase(value string) string {
 	return strings.ToLower(value)
 }
 
-func (c *Client) send(ctx context.Context, method, host, path string, body []byte) (apiResponse, error) {
+// requestHeader is an extra request header, e.g. DigitalPayments-PSP-Message-ID.
+type requestHeader struct {
+	name  string
+	value string
+}
+
+var headerNamePattern = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
+
+// send performs the request. Extra headers go after Accept and User-Agent; a
+// name outside [A-Za-z0-9-] or a value with a control character (header
+// injection) is rejected before anything is sent.
+func (c *Client) send(ctx context.Context, method, host, path string, body []byte, extraHeaders ...requestHeader) (apiResponse, error) {
 	base := c.baseURLs.Resolve(host)
 	if base == "" {
 		return apiResponse{}, newValidationError(`Unknown API host "` + host + `"`)
+	}
+	for _, header := range extraHeaders {
+		if !headerNamePattern.MatchString(header.name) || controlCharacterPattern.MatchString(header.value) {
+			return apiResponse{}, newValidationError(`Invalid request header "` + header.name + `"`)
+		}
 	}
 
 	var reader io.Reader
@@ -67,6 +84,10 @@ func (c *Client) send(ctx context.Context, method, host, path string, body []byt
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("User-Agent", userAgent())
+	for _, header := range extraHeaders {
+		// assigned directly so the name goes on the wire exactly as given, like in the PHP SDK
+		request.Header[header.name] = []string{header.value}
+	}
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
@@ -91,16 +112,16 @@ func (c *Client) send(ctx context.Context, method, host, path string, body []byt
 	return apiResponse{status: response.StatusCode, headers: headers, body: payload}, nil
 }
 
-func (c *Client) sendBody(ctx context.Context, method, host, path string, body *wire.Body) (apiResponse, error) {
+func (c *Client) sendBody(ctx context.Context, method, host, path string, body *wire.Body, extraHeaders ...requestHeader) (apiResponse, error) {
 	encoded, err := php.Encode(body, false)
 	if err != nil {
 		return apiResponse{}, newTransportError("Unable to encode request body as JSON", err)
 	}
-	return c.send(ctx, method, host, path, encoded)
+	return c.send(ctx, method, host, path, encoded, extraHeaders...)
 }
 
-func (c *Client) postJSONObject(ctx context.Context, host, path string, body *wire.Body) (map[string]any, error) {
-	response, err := c.sendBody(ctx, "POST", host, path, body)
+func (c *Client) postJSONObject(ctx context.Context, host, path string, body *wire.Body, extraHeaders ...requestHeader) (map[string]any, error) {
+	response, err := c.sendBody(ctx, "POST", host, path, body, extraHeaders...)
 	if err != nil {
 		return nil, err
 	}

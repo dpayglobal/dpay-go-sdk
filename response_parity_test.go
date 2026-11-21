@@ -118,7 +118,7 @@ func TestResponseParityWithPHPSDK(t *testing.T) {
 	}
 
 	for _, key := range []string{"registered_redirect", "registered_paid", "registered_inline", "registered_recurring"} {
-		payment := registeredPaymentFromAPI(fixtures[key].(map[string]any))
+		payment := registeredPaymentFromAPI(fixtures[key].(map[string]any), CurrencyPLN)
 		want := golden[key].(map[string]any)
 		checked += compare(t, key+".transaction_id", payment.TransactionID(), want["transaction_id"])
 		checked += compare(t, key+".message", payment.Message(), want["message"])

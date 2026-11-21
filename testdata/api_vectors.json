@@ -1,5 +1,5 @@
 {
-  "_comment": "Wspólne wektory testowe SDK dpay 0.2.0 - dane syntetyczne (to nie są klucze dpay). Źródło: kod managera 28.09.2026.",
+  "_comment": "Wspólne wektory testowe SDK dpay 0.3.0 - dane syntetyczne (to nie są klucze dpay). Źródło: kod managera 28.09.2026, 18.11.2026 (IPN alias_update) i 19.11.2026 (server_trim: przycinanie łańcuchów przez API panelu, Laravel 13 Str::trim).",
   "service": "sdk-test-service",
   "secret_hash": "sdk-test-hash-0001",
   "transaction_id": "A75AEBB4-4B89-4834-AD43-EF442C133769",
@@ -153,6 +153,61 @@
         }
       },
       "checksum": "53620f0ea6b46723866a46f2f0059c79cbe080e59d4f134508546be3fa08dacf"
+    },
+    {
+      "name": "payouts_list_minimal",
+      "body": {
+        "service": "sdk-test-service"
+      },
+      "checksum": "8a106fb497d5eeedd2928d7d8f362e3402f77870270967ab3d51313d1f95dd58"
+    },
+    {
+      "name": "payouts_list_all_filters",
+      "body": {
+        "service": "sdk-test-service",
+        "date_from": "2026-08-01",
+        "date_to": "2026-08-31 23:59:59",
+        "state": 1,
+        "type": "standard",
+        "page": 2,
+        "per_page": 10
+      },
+      "checksum": "c711ce3d6e860db1619910f80fa4dbb7a8114ad296018746cfaaf469b4f8e8a1"
+    },
+    {
+      "name": "payouts_list_state_failed",
+      "body": {
+        "service": "sdk-test-service",
+        "state": -1
+      },
+      "checksum": "c7b569513239054aa2e6ae28d08099e5435e5f5c248cda8d132a3469341ecd5b"
+    },
+    {
+      "name": "payouts_list_state_waiting_page_1",
+      "body": {
+        "service": "sdk-test-service",
+        "state": 0,
+        "page": 1
+      },
+      "checksum": "d3eaa6549a52b4aa0872887b70a4dea2dd7758f39f2cb079caf3bfb49d5bcd6c"
+    },
+    {
+      "name": "payouts_details_full_minimal",
+      "body": {
+        "service": "sdk-test-service",
+        "withdraw_id": 12345
+      },
+      "checksum": "b4b8d4e9faf8a815e9ef2cc4f4e36b78330bb03990ef0b3237f1f164e8e4dbea"
+    },
+    {
+      "name": "payouts_details_full_page",
+      "body": {
+        "service": "sdk-test-service",
+        "withdraw_id": 12345,
+        "page": 2,
+        "per_page": 500
+      },
+      "checksum": "b25ea10f74283dd00e2192fe742bf8273a40c485a8450b3a7750abc5ff8ee00c"
     }
   ],
   "webhook": {
@@ -163,5 +218,166 @@
     "body": "{\"id\":\"evt_01k6a8q2m4pz7h8c3v5n9t2x6y\",\"type\":\"payment.succeeded\",\"data\":{\"object\":{\"object\":\"payment\",\"id\":\"A75AEBB4-4B89-4834-AD43-EF442C133769\",\"amount\":1000}}}",
     "signature": "v1,c+mTZVkrtVb4PwbraXxqRxriIZK/jhSz7mRwwA8pX+U=",
     "rotation_signature": "v1,c+mTZVkrtVb4PwbraXxqRxriIZK/jhSz7mRwwA8pX+U= v1,azvHQTzH+V7t5BuBZJWigdCAExALzrYn6bdMHpPdP9g="
+  },
+  "ipn": [
+    {
+      "name": "transfer",
+      "payload": {
+        "id": "A75AEBB4-4B89-4834-AD43-EF442C133769",
+        "amount": "10.00",
+        "email": "client@example.com",
+        "type": "transfer",
+        "attempt": 1,
+        "version": 1,
+        "custom": "order-1234",
+        "signature": "7fb702798b8539847450c13d53b3ecb225670210a66e4568e59bf3073eebfdbc"
+      }
+    },
+    {
+      "name": "dcb_without_email",
+      "payload": {
+        "id": "A75AEBB4-4B89-4834-AD43-EF442C133769",
+        "amount": "10.00",
+        "type": "dcb",
+        "attempt": 1,
+        "version": 1,
+        "custom": "order-1234",
+        "signature": "ff545e0898ea91cf194d935ec33603853e2f65fde2bdc5b52e8bb38628d05ecc"
+      }
+    },
+    {
+      "name": "alias_update_recurring_register",
+      "payload": {
+        "id": "A75AEBB4-4B89-4834-AD43-EF442C133769",
+        "type": "alias_update",
+        "change_type": "ALIAS_REGISTER",
+        "alias_type": "PAYID",
+        "alias_status": "ACTIVE",
+        "alias_label": "Abonament Premium",
+        "alias_key": "BLIK-ALIAS-KEY-0001",
+        "alias_expire_at": "2027-09-30",
+        "change_reason_category": null,
+        "change_reason_message": null,
+        "version": 1,
+        "signature": "4301bf484b55e69a6ee4825d1af43a7fa9b0d918d8b86cbac7f1e322d42724b6"
+      }
+    }
+  ],
+  "server_trim": {
+    "_comment": "Panel API (/api/v1/pbl/*): every string of the body is trimmed like Laravel 13 TrimStrings before the checksum; input -> sent body -> checksum (secret_hash). Blank after trimming is sent as \"\" (the API hashes it as an empty segment).",
+    "strings": [
+      {
+        "name": "ascii_whitespace_and_nul",
+        "input": " \t\n\r\u000b\f\u0000A75AEBB4-4B89-4834-AD43-EF442C133769 \n",
+        "trimmed": "A75AEBB4-4B89-4834-AD43-EF442C133769"
+      },
+      {
+        "name": "unicode_spaces",
+        "input": "\u00a0\u1680\u2003\u3000reklamacja\u2028\u2029\u0085",
+        "trimmed": "reklamacja"
+      },
+      {
+        "name": "invisible_characters",
+        "input": "\ufeff\u200b\u200d\u00adzwrot\u2060\u3164\ud834\udd59\udb40\udc20",
+        "trimmed": "zwrot"
+      },
+      {
+        "name": "inner_characters_kept",
+        "input": "\u00a0zwrot  za\u00a0towar\u200bx\u200b",
+        "trimmed": "zwrot  za\u00a0towar\u200bx"
+      },
+      {
+        "name": "not_trimmed",
+        "input": "\b\u180f\u2066x\u2069\ufffc\u00b7",
+        "trimmed": "\b\u180f\u2066x\u2069\ufffc\u00b7"
+      },
+      {
+        "name": "blank",
+        "input": "\u3000 \ufeff\u200b\n",
+        "trimmed": ""
+      },
+      {
+        "name": "date",
+        "input": "\ufeff2026-08-01\u00a0",
+        "trimmed": "2026-08-01"
+      },
+      {
+        "name": "trailing_newline_only",
+        "input": "2026-08-31 23:59:59\n",
+        "trimmed": "2026-08-31 23:59:59"
+      }
+    ],
+    "bodies": [
+      {
+        "name": "refund_partial_with_reason_and_webhook",
+        "input": {
+          "service": "sdk-test-service",
+          "transaction_id": " A75AEBB4-4B89-4834-AD43-EF442C133769\n",
+          "value": "15.00",
+          "reason": "\u00a0reklamacja\u200b",
+          "webhook": {
+            "url": "https://shop.example/webhooks/refunds",
+            "events": [
+              "refund.succeeded"
+            ]
+          }
+        },
+        "body": {
+          "service": "sdk-test-service",
+          "transaction_id": "A75AEBB4-4B89-4834-AD43-EF442C133769",
+          "value": "15.00",
+          "reason": "reklamacja",
+          "webhook": {
+            "url": "https://shop.example/webhooks/refunds",
+            "events": [
+              "refund.succeeded"
+            ]
+          }
+        },
+        "checksum": "68b2bae5c82d6b0085d91496aa1c06c0307870afd30c3ac50283cfcc248c8db9"
+      },
+      {
+        "name": "refund_blank_reason",
+        "input": {
+          "service": "sdk-test-service",
+          "transaction_id": "A75AEBB4-4B89-4834-AD43-EF442C133769",
+          "reason": "\u3000 \ufeff"
+        },
+        "body": {
+          "service": "sdk-test-service",
+          "transaction_id": "A75AEBB4-4B89-4834-AD43-EF442C133769",
+          "reason": ""
+        },
+        "checksum": "1ea94961626d858db224ced1037f363ebbce7481bc3245956e2847abe4016f2a"
+      },
+      {
+        "name": "details_transaction_id",
+        "input": {
+          "service": "sdk-test-service",
+          "transaction_id": "\tA75AEBB4-4B89-4834-AD43-EF442C133769\u2028"
+        },
+        "body": {
+          "service": "sdk-test-service",
+          "transaction_id": "A75AEBB4-4B89-4834-AD43-EF442C133769"
+        },
+        "checksum": "dbae59367823ac7e27dcb76ab1e093eedb5b352dc1dd122036dba0f7a2642d5c"
+      },
+      {
+        "name": "payouts_list_dates",
+        "input": {
+          "service": "sdk-test-service",
+          "date_from": "\ufeff2026-08-01\u00a0",
+          "date_to": "2026-08-31 23:59:59\n",
+          "state": 1
+        },
+        "body": {
+          "service": "sdk-test-service",
+          "date_from": "2026-08-01",
+          "date_to": "2026-08-31 23:59:59",
+          "state": 1
+        },
+        "checksum": "438810becc2aff32b86694a318f1ca7ef45764ec6e7fe58b7fd1bfaeb9c81091"
+      }
+    ]
   }
 }

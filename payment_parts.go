@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -21,6 +22,7 @@ var (
 	expiryPattern             = regexp.MustCompile(`^(0[1-9]|1[0-2])/\d{2}$`)
 	eventIDPattern            = regexp.MustCompile(`^evt_[0-9a-z]{26}$`)
 	controlCharacterPattern   = regexp.MustCompile(`[\x00-\x1F\x7F]`)
+	whitespacePattern         = regexp.MustCompile(`[\t\n\v\f\r ]`)
 )
 
 func validURL(value string) bool {
@@ -196,23 +198,54 @@ func (i InvoiceDetails) toBody() *wire.Body {
 
 // PayoutPosition is a single 1:1 payout instruction line.
 type PayoutPosition struct {
-	// IBAN is the receiving account.
+	// IBAN is the Polish IBAN of one of your verified bank accounts (PL + 26
+	// digits, spaces allowed). It is sent exactly as given; the API normalises it.
 	IBAN string
 	// Title is the transfer title, 1-255 characters.
 	Title string
-	// Amount is the payout amount, sent as a float.
+	// Amount is the payout amount, above 0, sent as a float.
 	Amount Money
 }
 
-// Validate reports whether the IBAN and title are within range.
+// Validate reports whether the IBAN is a valid Polish IBAN, the title is within
+// range and the amount is above 0.
 func (p PayoutPosition) Validate() error {
-	if p.IBAN == "" {
-		return newValidationError("Payout IBAN must not be empty")
+	if !IsValidPolishIBAN(p.IBAN) {
+		return newValidationError(fmt.Sprintf("Payout IBAN %q must be a valid Polish IBAN (PL + 26 digits)", p.IBAN))
 	}
 	if length := runeLen(p.Title); length == 0 || length > 255 {
 		return newValidationError("Payout title must be 1-255 characters")
 	}
+	if p.Amount.Minor() <= 0 {
+		return newValidationError("Payout amount must be above 0")
+	}
 	return nil
+}
+
+var polishIBANPattern = regexp.MustCompile(`^PL\d{26}$`)
+
+// IsValidPolishIBAN reports whether iban is PL + 26 digits after removing
+// whitespace and upper-casing, with a valid ISO 13616 check (mod 97 = 1).
+func IsValidPolishIBAN(iban string) bool {
+	normalized := strings.ToUpper(whitespacePattern.ReplaceAllString(iban, ""))
+	if !polishIBANPattern.MatchString(normalized) {
+		return false
+	}
+	// Country code and check digits go to the end, letters become numbers (P = 25, L = 21)
+	numeric := normalized[4:] + "2521" + normalized[2:4]
+	remainder := 0
+	for start := 0; start < len(numeric); start += 7 {
+		end := start + 7
+		if end > len(numeric) {
+			end = len(numeric)
+		}
+		chunk, err := strconv.Atoi(strconv.Itoa(remainder) + numeric[start:end])
+		if err != nil {
+			return false
+		}
+		remainder = chunk % 97
+	}
+	return remainder == 1
 }
 
 func (p PayoutPosition) toBody() *wire.Body {
@@ -260,7 +293,7 @@ func (p PayoutInstruction) toBody() *wire.Body {
 
 // BlikAliasRegistration asks dpay to register a BLIK alias during a payment.
 type BlikAliasRegistration struct {
-	// Label is shown to the payer in their banking app, 1-50 characters.
+	// Label is shown to the payer in their banking app, 1-35 characters.
 	Label string
 	// Type selects the alias kind.
 	Type BlikAliasType
@@ -268,8 +301,8 @@ type BlikAliasRegistration struct {
 
 // Validate reports whether the label length and alias type are acceptable.
 func (b BlikAliasRegistration) Validate() error {
-	if length := runeLen(b.Label); length == 0 || length > 50 {
-		return newValidationError("Alias label must be 1-50 characters")
+	if length := runeLen(b.Label); length == 0 || length > 35 {
+		return newValidationError("Alias label must be 1-35 characters")
 	}
 	if !b.Type.Valid() {
 		return newValidationError(fmt.Sprintf("Invalid BLIK alias type %q", string(b.Type)))

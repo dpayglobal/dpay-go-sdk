@@ -26,7 +26,11 @@ type RegisterPaymentRequest struct {
 	Payer *Payer
 	// AcceptTos marks the terms of service as accepted.
 	AcceptTos *bool
-	// Channel preselects a payment channel.
+	// Channel is a direct payment channel (bank or method ID, e.g. 373 for MB
+	// WAY), skipping the dpay gateway. A channel requires the payer's email,
+	// first and last name (Payer) and AcceptTos; it cannot be tester, paypal,
+	// installment or paysafecard. An empty string is sent as before 0.3.0 and
+	// means no channel (the API turns it into null).
 	Channel *string
 
 	// CreditCard toggles the card channel, sent as 0 or 1.
@@ -42,9 +46,12 @@ type RegisterPaymentRequest struct {
 	// NoBanks hides bank transfers, sent as 0 or 1.
 	NoBanks *bool
 
-	// PhoneNumber is the payer phone number for direct carrier billing.
+	// PhoneNumber is the payer phone number (MB WAY +351..., direct carrier
+	// billing), 9-15 characters.
 	PhoneNumber *string
-	// CurrencyCode overrides the transaction currency.
+	// CurrencyCode sends currency_code explicitly. Optional since 0.3.0: an
+	// amount in another currency than PLN sends its currency on its own. When
+	// set it must equal the currency of Amount.
 	CurrencyCode Currency
 	// PartnerPlatform identifies the integration platform, matching ^[A-Z0-9]{1,64}$.
 	PartnerPlatform *string
@@ -71,7 +78,8 @@ type RegisterPaymentRequest struct {
 	// characters. The alias is appended to the checksum, binding the charge to
 	// that customer.
 	RecurringAlias *string
-	// AliasIPNURL receives alias lifecycle notifications.
+	// AliasIPNURL receives the alias_update notifications (BLIK OneClick and
+	// recurring payments), at most 500 characters.
 	AliasIPNURL *string
 	// NoDelay requests immediate processing.
 	NoDelay *bool
@@ -124,8 +132,23 @@ func (r *RegisterPaymentRequest) Validate() error {
 			return err
 		}
 	}
-	if r.CurrencyCode != "" && !r.CurrencyCode.Valid() {
-		return newValidationError(fmt.Sprintf("Invalid currency code %q", string(r.CurrencyCode)))
+	if r.Channel != nil && forbiddenChannels[*r.Channel] {
+		return newValidationError(fmt.Sprintf("Channel %q cannot be used as a direct payment channel", *r.Channel))
+	}
+	if r.PhoneNumber != nil {
+		if length := runeLen(*r.PhoneNumber); length < 9 || length > 15 {
+			return newValidationError("Phone number must be 9-15 characters")
+		}
+	}
+	if r.CurrencyCode != "" {
+		if !r.CurrencyCode.Valid() {
+			return newValidationError(fmt.Sprintf("Invalid currency code %q", string(r.CurrencyCode)))
+		}
+		if r.CurrencyCode != r.Amount.Currency() {
+			return newValidationError(fmt.Sprintf(
+				"Currency code %q does not match the amount currency %q - create the amount with dpay.NewMoney(..., %q)",
+				string(r.CurrencyCode), string(r.Amount.Currency()), string(r.CurrencyCode)))
+		}
 	}
 	if r.PartnerPlatform != nil && !partnerPattern.MatchString(*r.PartnerPlatform) {
 		return newValidationError("Partner platform must match ^[A-Z0-9]{1,64}$")
@@ -168,7 +191,7 @@ func (r *RegisterPaymentRequest) Validate() error {
 			return newValidationError("Reference must be 1-64 characters without control characters")
 		}
 	}
-	if r.AliasIPNURL != nil && !validURL(*r.AliasIPNURL) {
+	if r.AliasIPNURL != nil && (runeLen(*r.AliasIPNURL) > 500 || !validURL(*r.AliasIPNURL)) {
 		return newValidationError(fmt.Sprintf("Invalid alias IPN URL %q", *r.AliasIPNURL))
 	}
 	if r.CardRecurring != nil && r.CardRecurringAlias != nil {
@@ -203,6 +226,12 @@ func (r *RegisterPaymentRequest) Validate() error {
 	if err := r.validateRecurringCombination(); err != nil {
 		return err
 	}
+	if err := r.validateDirectChannel(); err != nil {
+		return err
+	}
+	if err := r.validateEfakturaCombination(); err != nil {
+		return err
+	}
 	if r.RecurringRegistration != nil {
 		return r.RecurringRegistration.validateModel()
 	}
@@ -227,7 +256,7 @@ func (r *RegisterPaymentRequest) validateRecurringCombination() error {
 		{"card_recurring_alias", r.CardRecurringAlias != nil},
 	}
 	if r.RecurringRegistration != nil {
-		conflicts = append(conflicts, presentField{"channel", r.Channel != nil})
+		conflicts = append(conflicts, presentField{"channel", r.hasChannel()})
 		if r.BlikCode == nil {
 			return newValidationError("recurring_registration requires the customer's BLIK code (BlikCode)")
 		}
@@ -240,6 +269,63 @@ func (r *RegisterPaymentRequest) validateRecurringCombination() error {
 	for _, conflict := range conflicts {
 		if conflict.present {
 			return newValidationError(conflict.name + " cannot be combined with a recurring payment")
+		}
+	}
+	return nil
+}
+
+// forbiddenChannels are the channels the API refuses as a direct channel.
+var forbiddenChannels = map[string]bool{"tester": true, "paypal": true, "installment": true, "paysafecard": true}
+
+// hasChannel reports whether a non-empty channel is set; the API turns an empty
+// channel into null.
+func (r *RegisterPaymentRequest) hasChannel() bool {
+	return r.Channel != nil && *r.Channel != ""
+}
+
+// validateDirectChannel mirrors RegisterPaymentRequest::assertDirectChannel of
+// the PHP SDK: MB WAY (mb_way_direct) needs a channel (373) and the device info
+// with BrowserJavaEnabled; any direct channel needs the payer's email and name
+// and the terms acceptance - otherwise the API answers 422.
+func (r *RegisterPaymentRequest) validateDirectChannel() error {
+	if r.TransactionType == TransactionTypeMBWayDirect {
+		if !r.hasChannel() {
+			return newValidationError(`transactionType "mb_way_direct" requires a channel (Channel: dpay.String("373"))`)
+		}
+		if r.DeviceInfo == nil || r.DeviceInfo.BrowserJavaEnabled == nil {
+			return newValidationError(`transactionType "mb_way_direct" requires device info with browserJavaEnabled (DeviceInfo.BrowserJavaEnabled)`)
+		}
+	}
+	if !r.hasChannel() {
+		return nil
+	}
+	payer := r.Payer
+	if payer == nil || payer.Email == nil || payer.FirstName == nil || *payer.FirstName == "" ||
+		payer.LastName == nil || *payer.LastName == "" {
+		return newValidationError("A direct channel requires the payer's email, first name and last name (Payer)")
+	}
+	if r.AcceptTos == nil {
+		return newValidationError("A direct channel requires the terms acceptance (AcceptTos)")
+	}
+	return nil
+}
+
+// validateEfakturaCombination mirrors RegisterPaymentRequest::assertEfakturaCombination of the PHP SDK.
+func (r *RegisterPaymentRequest) validateEfakturaCombination() error {
+	if r.Efaktura == nil {
+		return nil
+	}
+	for _, conflict := range []presentField{
+		{"blik_code", r.BlikCode != nil},
+		{"blik_alias", r.BlikAlias != nil},
+		{"register_blik_alias", r.RegisterBlikAlias != nil},
+		{"recurring_registration", r.RecurringRegistration != nil},
+		{"recurring_alias", r.RecurringAlias != nil},
+		{"register_card_recurring", r.CardRecurring != nil},
+		{"card_recurring_alias", r.CardRecurringAlias != nil},
+	} {
+		if conflict.present {
+			return newValidationError("efaktura cannot be combined with " + conflict.name)
 		}
 	}
 	return nil
@@ -284,8 +370,13 @@ func (r *RegisterPaymentRequest) toBody(service string) (*wire.Body, error) {
 	setFlag(body, "nobanks", r.NoBanks)
 
 	body.SetIfNotNil("phone_number", r.PhoneNumber)
-	if r.CurrencyCode != "" {
-		body.Set("currency_code", string(r.CurrencyCode))
+	currencyCode := r.CurrencyCode
+	if currencyCode == "" && r.Amount.Currency().Valid() && r.Amount.Currency() != CurrencyPLN {
+		// The API registers an amount without currency_code in PLN
+		currencyCode = r.Amount.Currency()
+	}
+	if currencyCode != "" {
+		body.Set("currency_code", string(currencyCode))
 	}
 	body.SetIfNotNil("partner_platform", r.PartnerPlatform)
 	body.SetIfNotNil("user_agent", r.UserAgent)

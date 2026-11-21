@@ -23,12 +23,15 @@ func (s *BankService) All(ctx context.Context) ([]*Bank, error) {
 // ForService returns the banks enabled for this payment point. Without
 // WithTimestamp the current time is sent, exactly as the PHP SDK does.
 func (s *BankService) ForService(ctx context.Context, opts ...TimestampOption) ([]*Bank, error) {
+	service, err := s.client.panelService()
+	if err != nil {
+		return nil, err
+	}
 	body := wire.NewBody()
-	body.Set("service", s.client.service)
+	body.Set("service", service)
 	body.Set("timestamp", resolveTimestamp(opts))
-	body.Set("checksum", s.client.checksum.OrderedBody(body))
 
-	data, err := s.client.postJSONArray(ctx, hostPanel, "/api/v1/pbl/banks", body)
+	data, err := s.client.postJSONArray(ctx, hostPanel, "/api/v1/pbl/banks", s.client.signPanelBody(body))
 	if err != nil {
 		return nil, err
 	}

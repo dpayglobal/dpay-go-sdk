@@ -16,7 +16,7 @@ import (
 // TotLimitAmt, ExpirationDate and InitDate and does not allow LimitAmtFixed=false;
 // in RecurringModelManual they are optional.
 type RecurringRegistration struct {
-	// Label is shown to the customer, 1-50 characters.
+	// Label is shown to the customer, 1-35 characters.
 	Label string
 	// Model decides who approves later charges.
 	Model RecurringModel
@@ -56,8 +56,8 @@ func (r RecurringRegistration) Validate() error {
 }
 
 func (r RecurringRegistration) validateFields() error {
-	if length := runeLen(r.Label); length == 0 || length > 50 {
-		return newValidationError("Recurring payment label must be 1-50 characters")
+	if length := runeLen(r.Label); length == 0 || length > 35 {
+		return newValidationError("Recurring payment label must be 1-35 characters")
 	}
 	if !r.Model.Valid() {
 		return newValidationError(fmt.Sprintf("Invalid recurring model %q", string(r.Model)))

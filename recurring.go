@@ -220,6 +220,9 @@ func (r *RecurringRetryResult) Status() RecurringRetryStatus {
 // IsPending reports whether the retry went to the bank and waits for its outcome.
 func (r *RecurringRetryResult) IsPending() bool { return r.Status() == RecurringRetryStatusPending }
 
+// IsSuccess reports whether the retry succeeded at once.
+func (r *RecurringRetryResult) IsSuccess() bool { return r.Status() == RecurringRetryStatusSuccess }
+
 // IsFailed reports whether the bank declined the retry at once.
 func (r *RecurringRetryResult) IsFailed() bool { return r.Status() == RecurringRetryStatusFailed }
 

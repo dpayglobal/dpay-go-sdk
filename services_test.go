@@ -90,6 +90,7 @@ func TestRegisterRequestFieldOrder(t *testing.T) {
 	request.Installment = Bool(false)
 	request.PayPal = Bool(true)
 	request.NoBanks = Bool(false)
+	request.Amount, _ = NewMoney(2999, CurrencyEUR)
 	request.PhoneNumber = String("+48123456789")
 	request.CurrencyCode = CurrencyEUR
 	request.PartnerPlatform = String("SHOPIFY01")
@@ -144,13 +145,11 @@ func TestRegisterRequestNestedObjects(t *testing.T) {
 	}
 	request.Payout = &PayoutInstruction{
 		FeeMode:   PayoutFeeModeGross,
-		Positions: []PayoutPosition{{IBAN: "PL61", Title: "Wypłata 1", Amount: PLN(1050)}},
+		Positions: []PayoutPosition{{IBAN: "PL61109010140000071219812874", Title: "Wypłata 1", Amount: PLN(1050)}},
 	}
 	request.BillingAddress = NewFields().Set("street", "Testowa 1").Set("city", "Warszawa")
 	request.DeviceInfo = &DeviceInfo{DeviceID: "d", ApplicationName: "a"}
 	request.Products = []any{NewFields().Set("name", "Produkt").Set("price", 29.99)}
-	request.Efaktura = Bool(true)
-	request.Invoice = &InvoiceDetails{PayerNIP: String("1234563218")}
 
 	body, err := request.toBody("svc")
 	if err != nil {
@@ -159,12 +158,25 @@ func TestRegisterRequestNestedObjects(t *testing.T) {
 	got := bodyJSON(t, body)
 	for _, fragment := range []string{
 		`"recurring_registration":{"label":"Subskrypcja","alias":"SUB-1","model":"O","terms_url":"https://shop.test/regulamin"}`,
-		`"payout":{"fee_mode":"gross","positions":[{"iban":"PL61","title":"Wypłata 1","amount":10.5}]}`,
+		`"payout":{"fee_mode":"gross","positions":[{"iban":"PL61109010140000071219812874","title":"Wypłata 1","amount":10.5}]}`,
 		`"billing_address":{"street":"Testowa 1","city":"Warszawa"}`,
 		`"products":[{"name":"Produkt","price":29.99}]`,
-		`"efaktura":true`,
-		`"invoice":{"payer_nip":"1234563218"}`,
 	} {
+		if !strings.Contains(got, fragment) {
+			t.Fatalf("missing %s\nin %s", fragment, got)
+		}
+	}
+
+	// efaktura cannot be combined with BLIK or recurring payments (0.3.0)
+	invoiced := minimalRequest()
+	invoiced.Efaktura = Bool(true)
+	invoiced.Invoice = &InvoiceDetails{PayerNIP: String("1234563218")}
+	body, err = invoiced.toBody("svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = bodyJSON(t, body)
+	for _, fragment := range []string{`"efaktura":true`, `"invoice":{"payer_nip":"1234563218"}`} {
 		if !strings.Contains(got, fragment) {
 			t.Fatalf("missing %s\nin %s", fragment, got)
 		}
@@ -361,18 +373,18 @@ func TestPaymentsDetailsMapsHTTPErrors(t *testing.T) {
 }
 
 func TestRegisteredPaymentMessageHelpers(t *testing.T) {
-	paid := registeredPaymentFromAPI(map[string]any{"msg": "Transaction paid"})
+	paid := registeredPaymentFromAPI(map[string]any{"msg": "Transaction paid"}, CurrencyPLN)
 	if !paid.IsPaid() || paid.RedirectURL() != "" {
 		t.Fatal("Transaction paid must not look like a redirect")
 	}
-	inline := registeredPaymentFromAPI(map[string]any{"msg": "Internal processing"})
+	inline := registeredPaymentFromAPI(map[string]any{"msg": "Internal processing"}, CurrencyPLN)
 	if !inline.IsInlineProcessing() {
 		t.Fatal("IsInlineProcessing broken")
 	}
 	alias := registeredPaymentFromAPI(map[string]any{
 		"msg":            "Transaction paid",
 		"additionalInfo": map[string]any{"card_recurring_alias": "ca-1"},
-	})
+	}, CurrencyPLN)
 	if alias.CardRecurringAlias() != "ca-1" {
 		t.Fatal("CardRecurringAlias broken")
 	}

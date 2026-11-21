@@ -47,6 +47,67 @@ Pola opcjonalne są wskaźnikami. `nil` pomija pole, a `dpay.Bool(false)` wysył
 `false` - to rozróżnienie ma znaczenie dla API. Do budowania wskaźników służą
 `dpay.String`, `dpay.Bool`, `dpay.Int` i `dpay.Int64`.
 
+## Waluta
+
+Waluta płatności to waluta kwoty `Money`. Kwota w innej walucie niż PLN wysyła `currency_code` sama
+(od 0.3.0), np. CZK dla banków czeskich, EUR dla MB WAY, Multibanco i banków słowackich. Serwis musi mieć
+tę walutę włączoną (`CurrencyPLN`, `CurrencyEUR`, `CurrencyCZK`, `CurrencyUSD`, `CurrencyRON`).
+
+```go
+amount, err := dpay.NewMoney(49900, dpay.CurrencyCZK)
+
+payment, err := client.Payments.Register(ctx, &dpay.RegisterPaymentRequest{
+    Amount:          amount,
+    TransactionType: dpay.TransactionTypeTransfers,
+    URLs:            urls,
+})
+```
+
+`CurrencyCode` (także razem z `PhoneNumber`) przyjmuje tylko walutę kwoty - `dpay.PLN(...)` z kodem `EUR`
+kończy się błędem `ErrInvalidArgument`.
+
+## MB WAY i kanały bezpośrednie
+
+Kanał bezpośredni (`Channel`) wymaga emaila, imienia i nazwiska płatnika (`Payer`) oraz `AcceptTos`.
+MB WAY wymaga dodatkowo kanału `373` i pełnego `DeviceInfo` z `BrowserJavaEnabled` - SDK sprawdza to
+przed wysłaniem (API odpowiedziałoby 422). Kanały `tester`, `paypal`, `installment` i `paysafecard` nie są
+kanałami bezpośrednimi, a pusty kanał (`dpay.String("")`) oznacza brak kanału, jak przed 0.3.0.
+
+```go
+amount, _ := dpay.NewMoney(1250, dpay.CurrencyEUR)
+
+payment, err := client.Payments.Register(ctx, &dpay.RegisterPaymentRequest{
+    Amount:          amount,
+    TransactionType: dpay.TransactionTypeMBWayDirect,
+    URLs:            urls,
+    PhoneNumber:     dpay.String("+351912345678"),
+    Channel:         dpay.String("373"),
+    Payer: &dpay.Payer{
+        Email:     dpay.String("cliente@example.pt"),
+        FirstName: dpay.String("Joao"),
+        LastName:  dpay.String("Silva"),
+    },
+    AcceptTos: dpay.Bool(true),
+    DeviceInfo: &dpay.DeviceInfo{
+        BrowserAcceptHeader: accept, BrowserLanguage: "pt-PT", BrowserColorDepth: 24,
+        BrowserScreenHeight: 1080, BrowserScreenWidth: 1920, BrowserTZ: 0, BrowserUserAgent: userAgent,
+        SystemFamily: "Win32", GeoLocalization: "38.72,-9.14", DeviceID: deviceID, ApplicationName: "Netscape",
+        BrowserJavaEnabled: dpay.Bool(false),
+    },
+})
+```
+
+Multibanco (kanał `390`, EUR) zwraca referencję do pokazania płatnikowi:
+
+```go
+if reference := payment.Multibanco(); reference != nil {
+    reference.Entity()    // encja, 5 cyfr
+    reference.Reference() // referencja, 9 cyfr; Amount(), ExpiresAt()
+}
+```
+
+Odpowiedź "Transaction paid" (płatność już opłacona) niesie transakcję w `payment.PaidTransaction()`.
+
 ## Płatności cykliczne
 
 Rejestracja idzie razem z płatnością kodem BLIK klienta (kwota `0` - sama zgoda, więcej - opłata inicjalna).
@@ -92,6 +153,8 @@ Ponowienie, którego API nie dopuszcza, kończy się błędem `ErrInvalidRequest
 `apiErr.FieldErrors["retry"]` (np. `DECLINE_NOT_RETRYABLE`). Limity API: `Status` do 60,
 `Retry` i `Cancel` do 30 zapytań na minutę (licznik wspólny z resztą API płatności z tego
 adresu IP) - nie odpytuj statusu w pętli, wynik przychodzi webhookiem.
+Powód odmowy ponowienia to jedna ze stałych `RetryRefusal` (`RetryRefusalDeclineNotRetryable` i inne).
+Zmiany statusu płatności cyklicznej przychodzą też jako IPN `alias_update` (patrz Obsługa IPN).
 
 ## Webhooki
 
@@ -113,13 +176,21 @@ func webhookHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    if event.Type() == dpay.WebhookEventTypePaymentSucceeded {
-        payment := event.Object() // kwoty w groszach
-        _ = payment
+    // PaymentObject, nil dla innych obiektów
+    if payment := event.Payment(); payment != nil {
+        if payment.Status() == dpay.PaymentObjectStatusSucceeded {
+            markOrderAsPaid(payment.MerchantReference(), payment.Amount()) // Money: grosze i waluta
+        }
+        if failure := payment.Failure(); failure != nil && failure.IsRetryable() {
+            // np. dpay.DeclineCodeInsufficientFunds - klient może zapłacić ponownie
+        }
     }
     w.WriteHeader(http.StatusOK)
 }
 ```
+
+Obiekty: `event.Payment()`, `event.Refund()`, `event.RecurringPayment()`, `event.Payout()`; surowa mapa -
+`event.Object()`. Kody odmów to stałe `DeclineCode` (lista: `dpay.DeclineCodes()`), kategorie - `FailureCategory`.
 
 `VerifyWebhook` sprawdza podpis `v1` i znacznik czasu (tolerancja 5 minut). Inną tolerancję
 albo własny zegar ustawisz w `dpay.WebhookVerifier{Secrets: ..., Tolerance: ..., Now: ...}`.
@@ -146,7 +217,7 @@ Pole `Reference` (do 64 znaków) wraca w zdarzeniach jako `references.merchant`.
 
 ## Obsługa IPN
 
-IPN przychodzi tylko wtedy, gdy podasz adres IPN w `ReturnURLs.IPN`.
+IPN przychodzi tylko wtedy, gdy podasz adres IPN w `ReturnURLs.IPN` (IPN `alias_update` także na `AliasIPNURL`).
 
 dpay.pl uznaje IPN za dostarczony wyłącznie, gdy body odpowiedzi to dokładnie `OK`.
 Kod HTTP nie jest sprawdzany. Zawsze weryfikuj kwotę z własnym zamówieniem.
@@ -165,13 +236,24 @@ func ipnHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    if event.IsTransfer() {
+    switch {
+    case event.IsTransfer():
         markOrderAsPaid(event.ID(), event.Amount())
+    case event.IsAliasUpdate():
+        alias := event.AliasUpdate() // ChangeType(), AliasType(), AliasStatus(), ...
+        _ = alias
     }
 
     fmt.Fprint(w, dpay.IPNAck)
 }
 ```
+
+IPN `alias_update` (zmiana aliasu BLIK OneClick lub płatności cyklicznej) przychodzi na `AliasIPNURL`,
+a bez niego na adres IPN. Ma inny podpis (`sha256(id . hash . type . version)`) - `VerifyIPN` rozpoznaje go
+po `type`, więc zawsze sprawdzaj typ (`IsTransfer()`) przed oznaczeniem zamówienia jako opłaconego: `ID()`
+to wtedy płatność, która zarejestrowała alias, a `Amount()` jest puste. Podpis nie obejmuje pól aliasu
+(`AliasUpdate()`) - przed reakcją na zmianę potwierdź stan przez `client.Recurring.Status()`
+lub `client.Blik.Alias()`.
 
 `event.Amount()` to surowy string dziesiętny - payload IPN nie niesie waluty,
 więc porównaj go z kwotą własnego zamówienia.
@@ -195,11 +277,25 @@ client.Refunds.Create(ctx, "identyfikator-transakcji",
         },
     }))
 
+// Własny identyfikator zwrotu (nagłówek DigitalPayments-PSP-Message-ID) - tytuł przelewu "dpay.pl zwrot RET-1234"
+client.Refunds.Create(ctx, "identyfikator-transakcji",
+    dpay.WithRefundAmount(dpay.PLN(500)),
+    dpay.WithRefundMessageID("RET-1234"))
+
 availability, err := client.Refunds.CheckAvailability(ctx, "identyfikator-transakcji")
 if err == nil && availability.IsAvailable() {
     // ...
 }
 ```
+
+`CheckAvailability` rozstrzyga po treści odpowiedzi, nie po liście kodów: HTTP 200 i każda odpowiedź 4xx
+z kluczem `refund` to wynik (nie błąd) - dziś odmowy biznesowe 400, 402, 404 (transakcja nie istnieje), 406,
+409, 410, 411, 423 i biznesowe 401; przyczynę rozróżnia `HTTPStatus()`. Błędem są: błędna suma kontrolna
+(401 "Unauthorized request"), każda odpowiedź bez klucza `refund` - tak API odpowiada na błędy walidacji (422)
+i limit zapytań (429) - oraz każde 5xx, także z kluczem `refund`.
+
+Identyfikator transakcji, powód i adres webhooka są wysyłane i podpisywane bez białych i niewidocznych znaków
+na brzegach - API panelu przycina je przed sprawdzeniem sumy kontrolnej (patrz [Białe znaki](#białe-znaki-w-api-panelu)).
 
 ## Szczegóły transakcji i banki
 
@@ -209,8 +305,48 @@ transaction.IsPaid()
 transaction.AvailableRefundAmount().String()
 transaction.Refunds()
 
+transaction.Rate()  // prowizja, np. "1.49"
+transaction.URLs()  // TransactionURLs: Success(), Fail(), IPN()
+
 banks, err := client.Banks.ForService(ctx)
 ```
+
+## Wypłaty
+
+```go
+processed := dpay.PayoutStateProcessed
+payouts := client.Payouts.Iterate(ctx, &dpay.PayoutListParams{
+    DateFrom: dpay.String("2026-08-01"),
+    State:    &processed,
+})
+for payouts.Next() {
+    settlement, err := client.Payouts.DetailsFull(ctx, payouts.Payout().ID(), nil)
+    if err != nil {
+        return err
+    }
+    for _, position := range settlement.Positions() {
+        position.PaymentID() // transakcja z IPN; Custom(), Net(), Fee(), Gross()
+    }
+}
+if err := payouts.Err(); err != nil {
+    return err
+}
+```
+
+`Payouts.List` zwraca jedną stronę (`PerPage` do 200), `Payouts.DetailsFull` - sumy całego rozliczenia
+(`SummaryNet()`, `SummaryCount()`) i stronę pozycji (`PerPage` do 500). Kwoty są w walucie wypłaty
+(`Currency()`, PLN gdy API jej nie podaje). Nieznany stan (`State`) lub typ (`Type`) wypłaty i pusta data
+kończą się błędem `ErrInvalidArgument`.
+
+### Białe znaki w API panelu
+
+API panelu (`Refunds`, `Payments.Details()`, `Banks.ForService()`, `Payouts`) przycina każdy łańcuch żądania
+przed sprawdzeniem sumy kontrolnej - spacje, tabulatory i znaki nowej linii, ale też spacje Unicode (np. U+00A0,
+U+3000) i znaki niewidoczne (np. U+200B, U+FEFF); to inny zbiór niż `strings.TrimSpace`. SDK wysyła i podpisuje
+te wartości (także nazwę serwisu) już przycięte, więc `" 2026-08-01\n"` trafia do API jako `"2026-08-01"`.
+Identyfikator transakcji, nazwa serwisu i daty, z których nic nie zostaje, kończą się błędem `ErrInvalidArgument`
+(`transaction_id must not be empty`); powód zwrotu, z którego nic nie zostaje, jest wysyłany jako pusty. Żądania
+API płatności nie są przycinane.
 
 ## Karty S2S
 
@@ -266,6 +402,15 @@ case errors.Is(err, dpay.ErrInvalidRequest):
     var apiErr *dpay.APIError
     errors.As(err, &apiErr)
     log.Print(apiErr.FieldErrors, apiErr.ErrorCode, apiErr.Reason) // np. WEBHOOK_URL_INVALID, https_required
+    log.Print(apiErr.TransactionID) // transakcja utworzona przed błędem, np. odrzucone pobranie z karty
+    if apiErr.CardError != nil {
+        log.Print(apiErr.CardError.Code, apiErr.CardError.DeclineCode) // np. payment_declined, 51 (ISO 8583)
+    }
+
+case errors.Is(err, dpay.ErrRateLimit):
+    var rateLimit *dpay.RateLimitError
+    errors.As(err, &rateLimit)
+    log.Print(rateLimit.RetryAfter, rateLimit.Reset) // sekundy; czas Unix odnowienia limitu
 
 case errors.Is(err, dpay.ErrPaymentRejected):
     var rejected *dpay.PaymentRejectedError
@@ -277,13 +422,16 @@ case errors.Is(err, dpay.ErrTransport):
 }
 ```
 
+Odmowa karty z HTTP 200 (`success: false`) to `*CardPaymentError`: `ErrorCode` to komunikat API
+(np. `DCC_OFFER_EXPIRED`), a `CardError` - kod odmowy, gdy wystawca go podał.
+
 | Sentinel | Kiedy |
 |---|---|
 | `ErrAuthentication` | 401 - niepoprawny albo brakujący checksum (`CHECKSUM_REQUIRED`, `INVALID_CHECKSUM`) |
 | `ErrInvalidRequest` | 400, 422 |
 | `ErrAccessDenied` | 403 |
 | `ErrNotFound` | 404 |
-| `ErrRateLimit` | 429, `*RateLimitError` niesie `RetryAfter` |
+| `ErrRateLimit` | 429, `*RateLimitError` niesie `RetryAfter`, `Limit`, `Remaining` i `Reset` |
 | `ErrServer` | 5xx |
 | `ErrPaymentRejected` | rejestracja odrzucona przy HTTP 200 |
 | `ErrCardPayment` | płatność kartą odrzucona przy HTTP 200 |
@@ -299,7 +447,7 @@ case errors.Is(err, dpay.ErrTransport):
 | `dpay.New(service, secretHash)` | `string`, `string` | Nazwa Punktu Płatności z panel.dpay.pl i Secret Hash (wymagane) |
 | `WithTimeout` | `time.Duration` | Timeout domyślnego klienta HTTP (domyślnie 30 s) |
 | `WithHTTPClient` | `HTTPDoer` | Własny transport - proxy, retry, instrumentacja, testy |
-| `WithBaseURLs` | `BaseURLs` | Nadpisanie hostów API |
+| `WithBaseURLs` | `BaseURLs` | Nadpisanie hostów API: `APIPayments` (`api_payments`), `Panel` (`panel`), `Gateway` (`gateway`) |
 
 `HTTPDoer` to jednometodowy interfejs `Do(*http.Request) (*http.Response, error)`,
 który `*http.Client` spełnia bez adaptera. Retry i timeouty per żądanie
@@ -347,7 +495,7 @@ To SDK jest portem `dpayglobal/dpay-php-sdk` i utrzymuje parytet na poziomie
 wire-protocol: te same ścieżki, ta sama kolejność pól w body, te same checksumy
 i podpisy IPN. Parytet jest mierzony, nie deklarowany - testy porównują żądania
 bajt w bajt z wektorami wygenerowanymi z żywego SDK PHP, a sumy kontrolne
-i podpisy webhooków ze wspólnymi wektorami wszystkich SDK dpay
+i podpisy webhooków oraz IPN ze wspólnymi wektorami wszystkich SDK dpay
 (`testdata/api_vectors.json`).
 
 ## Licencja

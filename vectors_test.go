@@ -7,12 +7,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/dpayglobal/dpay-go-sdk/internal/wire"
 )
 
-// apiVectors mirrors testdata/api_vectors.json: checksum and webhook vectors
+// apiVectors mirrors testdata/api_vectors.json: checksum, webhook and IPN vectors
 // shared by all dpay SDKs (synthetic data computed with the API code; identical
 // to tests/Fixtures/api_vectors.json of the PHP SDK).
 type apiVectors struct {
@@ -36,6 +37,10 @@ type apiVectors struct {
 		Checksum string          `json:"checksum"`
 	} `json:"ordered_body"`
 	Webhook webhookVector `json:"webhook"`
+	IPN     []struct {
+		Name    string          `json:"name"`
+		Payload json.RawMessage `json:"payload"`
+	} `json:"ipn"`
 }
 
 type webhookVector struct {
@@ -58,7 +63,7 @@ func loadAPIVectors(t *testing.T) apiVectors {
 	if err := json.Unmarshal(raw, &vectors); err != nil {
 		t.Fatal(err)
 	}
-	if len(vectors.SecretSecond) == 0 || len(vectors.Operation) == 0 || len(vectors.OrderedBody) == 0 || vectors.Webhook.ID == "" {
+	if len(vectors.SecretSecond) == 0 || len(vectors.Operation) == 0 || len(vectors.OrderedBody) == 0 || vectors.Webhook.ID == "" || len(vectors.IPN) == 0 {
 		t.Fatal("testdata/api_vectors.json is incomplete")
 	}
 	return vectors
@@ -212,5 +217,89 @@ func TestOrderedBodySkipsChecksumAndCastsLikeTheAPI(t *testing.T) {
 	digest := sha256.Sum256([]byte("a|1||b|h"))
 	if got, want := wire.NewChecksum("h").OrderedBody(body), hex.EncodeToString(digest[:]); got != want {
 		t.Fatalf("got %s, want %s", got, want)
+	}
+}
+
+// serverTrimVectors mirrors the server_trim section of testdata/api_vectors.json:
+// how the panel API trims request strings before it verifies the checksum.
+type serverTrimVectors struct {
+	SecretHash string `json:"secret_hash"`
+	ServerTrim struct {
+		Strings []struct {
+			Name    string `json:"name"`
+			Input   string `json:"input"`
+			Trimmed string `json:"trimmed"`
+		} `json:"strings"`
+		Bodies []struct {
+			Name     string          `json:"name"`
+			Input    json.RawMessage `json:"input"`
+			Body     json.RawMessage `json:"body"`
+			Checksum string          `json:"checksum"`
+		} `json:"bodies"`
+	} `json:"server_trim"`
+}
+
+func loadServerTrimVectors(t *testing.T) serverTrimVectors {
+	t.Helper()
+	raw, err := os.ReadFile("testdata/api_vectors.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vectors serverTrimVectors
+	if err := json.Unmarshal(raw, &vectors); err != nil {
+		t.Fatal(err)
+	}
+	return vectors
+}
+
+func TestAPIVectorsFileIsTheSharedFixture(t *testing.T) {
+	raw, err := os.ReadFile("testdata/api_vectors.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(raw)
+	if got := hex.EncodeToString(digest[:]); got != "614b0cac500b8b610cf8a527f0227a0819fc3f5f07ca973338c050cc98933334" {
+		t.Fatalf("sha256 = %s - copy tests/Fixtures/api_vectors.json of the PHP SDK byte for byte", got)
+	}
+}
+
+func TestAPIVectorsServerTrimStrings(t *testing.T) {
+	vectors := loadServerTrimVectors(t)
+	if len(vectors.ServerTrim.Strings) != 8 {
+		t.Fatalf("%d string vectors, want 8", len(vectors.ServerTrim.Strings))
+	}
+	for _, vector := range vectors.ServerTrim.Strings {
+		if got := wire.ServerTrim(vector.Input); got != vector.Trimmed {
+			t.Errorf("%s: ServerTrim(%q) = %q, want %q", vector.Name, vector.Input, got, vector.Trimmed)
+		}
+	}
+}
+
+func TestAPIVectorsServerTrimBodies(t *testing.T) {
+	vectors := loadServerTrimVectors(t)
+	if len(vectors.ServerTrim.Bodies) != 4 {
+		t.Fatalf("%d body vectors, want 4", len(vectors.ServerTrim.Bodies))
+	}
+	checksum := wire.NewChecksum(vectors.SecretHash)
+	for _, vector := range vectors.ServerTrim.Bodies {
+		input, ok := decodeOrdered(t, vector.Input).(*wire.Body)
+		if !ok {
+			t.Fatalf("%s: input is not an object", vector.Name)
+		}
+		want, ok := decodeOrdered(t, vector.Body).(*wire.Body)
+		if !ok {
+			t.Fatalf("%s: body is not an object", vector.Name)
+		}
+		trimmed := wire.TrimBody(input)
+		if !reflect.DeepEqual(trimmed, want) {
+			got, _ := trimmed.MarshalJSON()
+			t.Errorf("%s: trimmed body = %s", vector.Name, got)
+		}
+		if got := checksum.OrderedBody(trimmed); got != vector.Checksum {
+			t.Errorf("%s: checksum = %s, want %s", vector.Name, got, vector.Checksum)
+		}
+		if checksum.OrderedBody(input) == vector.Checksum {
+			t.Errorf("%s: the untrimmed input must not give the checksum", vector.Name)
+		}
 	}
 }

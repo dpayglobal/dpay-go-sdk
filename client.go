@@ -135,6 +135,33 @@ func (c *Client) Service() string {
 	return c.service
 }
 
+// panelService returns the service name for a panel (/api/v1/pbl/*) request
+// body, trimmed the way the API trims it (wire.ServerTrim). The configured
+// value itself is unchanged and still goes untrimmed to api-payments.
+func (c *Client) panelService() (string, error) {
+	return requiredPanelString(c.service, "service")
+}
+
+// signPanelBody returns a panel (/api/v1/pbl/*) body ready to send: every
+// string trimmed the way the API trims it before it verifies the checksum
+// (wire.ServerTrim), then signed with the ordered-body checksum over the
+// values as sent.
+func (c *Client) signPanelBody(body *wire.Body) *wire.Body {
+	trimmed := wire.TrimBody(body)
+	trimmed.Set("checksum", c.checksum.OrderedBody(trimmed))
+	return trimmed
+}
+
+// requiredPanelString returns the trimmed value of a required panel field; it
+// fails when nothing is left (the API would answer 422).
+func requiredPanelString(value, field string) (string, error) {
+	trimmed := wire.ServerTrim(value)
+	if trimmed == "" {
+		return "", newValidationError(field + " must not be empty")
+	}
+	return trimmed, nil
+}
+
 // doNotFollowRedirects makes the default transport surface a redirect as the
 // response itself. Two reasons: the PHP SDK does not set CURLOPT_FOLLOWLOCATION,
 // so following one would report a different status than the reference SDK; and a

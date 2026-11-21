@@ -16,6 +16,8 @@ const (
 	CurrencyPLN Currency = "PLN"
 	CurrencyEUR Currency = "EUR"
 	CurrencyCZK Currency = "CZK"
+	CurrencyUSD Currency = "USD"
+	CurrencyRON Currency = "RON"
 )
 
 var currencyPattern = regexp.MustCompile(`^[A-Z]{3}$`)

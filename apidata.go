@@ -53,6 +53,15 @@ func jsonInt(value any) (int64, bool) {
 	return 0, false
 }
 
+// isJSONIntegerOne reports whether value is the JSON integer 1, the way the API
+// sends its 0/1 payout flags; strings ("1"), booleans and other numbers are
+// false. encoding/json decodes every number as float64, so a JSON 1.0 cannot be
+// told apart and counts as well (like jsonInt).
+func isJSONIntegerOne(value any) bool {
+	integer, ok := jsonInt(value)
+	return ok && integer == 1
+}
+
 // digitsInt converts a string of ASCII digits to an integer (PHP ctype_digit
 // followed by an int cast, which saturates on overflow).
 func digitsInt(value any) (int64, bool) {
@@ -148,4 +157,45 @@ func marshalRaw(data map[string]any) string {
 		return ""
 	}
 	return string(encoded)
+}
+
+// stringOrInt returns data[key] when it is a JSON string or integer (PHP
+// is_string || is_int, the integer as a decimal string), else an empty string.
+func stringOrInt(data map[string]any, key string) string {
+	switch value := data[key].(type) {
+	case string:
+		return value
+	case float64, int, int64:
+		if integer, ok := jsonInt(value); ok {
+			return strconv.FormatInt(integer, 10)
+		}
+	}
+	return ""
+}
+
+// numericInt returns data[key] cast to an integer when it is a number or a
+// numeric string (PHP is_numeric followed by an int cast), else fallback.
+func numericInt(data map[string]any, key string, fallback int64) int64 {
+	value, exists := data[key]
+	if !exists || !php.IsNumeric(value) {
+		return fallback
+	}
+	return php.Int(value)
+}
+
+// objectOrNil returns data[key] as an object when it is a JSON object or list
+// (PHP is_array), else nil.
+func objectOrNil(data map[string]any, key string) map[string]any {
+	if object, ok := phpArray(data[key]); ok {
+		return object
+	}
+	return nil
+}
+
+// currencyCode returns data[key] when it is a valid currency code, else fallback.
+func currencyCode(data map[string]any, key string, fallback Currency) Currency {
+	if code, ok := data[key].(string); ok && Currency(code).Valid() {
+		return Currency(code)
+	}
+	return fallback
 }

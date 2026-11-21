@@ -40,6 +40,37 @@ type APIError struct {
 	FieldErrors map[string][]string
 	// RawBody is the unparsed response body.
 	RawBody string
+	// TransactionID is the transaction created before the error, when the API
+	// returned one (transactionId, e.g. a declined charge on a saved card or a
+	// rejected payment) - use it to query the transaction. Empty otherwise.
+	TransactionID string
+	// CardError carries the card decline details: cardError of a Payments API
+	// error or error of a declined card operation; nil when the response has none.
+	CardError *CardError
+}
+
+// CardError is a card decline: the error object of a declined card operation
+// (HTTP 200, success false) and the cardError object of a Payments API error
+// (e.g. a declined charge on a saved card). An empty field means the API sent
+// null or nothing.
+type CardError struct {
+	// Code is the stable dpay reason, e.g. payment_declined, invalid_card or
+	// card_already_registered.
+	Code string
+	// DeclineCode is the two-character card network response code (ISO 8583),
+	// e.g. 05 or 51; empty when the decline does not come from an authorisation.
+	DeclineCode string
+	// DeclineMessage is the English description of the decline code - localise
+	// from DeclineCode, not from this text.
+	DeclineMessage string
+}
+
+func cardErrorFromAPI(data map[string]any) *CardError {
+	return &CardError{
+		Code:           stringOrInt(data, "code"),
+		DeclineCode:    stringOrInt(data, "declineCode"),
+		DeclineMessage: stringOrInt(data, "declineMessage"),
+	}
 }
 
 // Error implements error.
@@ -62,6 +93,9 @@ type RateLimitError struct {
 	Limit *int
 	// Remaining is the X-RateLimit-Remaining header, nil when absent.
 	Remaining *int
+	// Reset is the X-RateLimit-Reset header: the Unix time in seconds when the
+	// limit resets, nil when absent.
+	Reset *int64
 }
 
 // Unwrap exposes the embedded APIError to errors.As.
@@ -80,7 +114,10 @@ type PaymentRejectedError struct {
 // Unwrap exposes the embedded APIError to errors.As.
 func (e *PaymentRejectedError) Unwrap() error { return e.APIError }
 
-// CardPaymentError is returned when a card operation fails with HTTP 200 and success != true.
+// CardPaymentError is returned when a card operation fails with HTTP 200 and
+// success != true. Its message and ErrorCode carry the API message (e.g.
+// DCC_OFFER_EXPIRED); APIError.CardError carries the decline details (error)
+// when the decline has a recognised code.
 type CardPaymentError struct {
 	*APIError
 }

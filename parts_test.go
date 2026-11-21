@@ -164,14 +164,14 @@ func TestPayoutInstructionValidate(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 	badIBAN := PayoutInstruction{FeeMode: PayoutFeeModeNet, Positions: []PayoutPosition{{Title: "t", Amount: PLN(1)}}}
-	if err := badIBAN.Validate(); err == nil || err.Error() != "dpay: Payout IBAN must not be empty" {
+	if err := badIBAN.Validate(); err == nil || err.Error() != `dpay: Payout IBAN "" must be a valid Polish IBAN (PL + 26 digits)` {
 		t.Fatalf("err = %v", err)
 	}
-	badTitle := PayoutInstruction{FeeMode: PayoutFeeModeNet, Positions: []PayoutPosition{{IBAN: "PL1", Amount: PLN(1)}}}
+	badTitle := PayoutInstruction{FeeMode: PayoutFeeModeNet, Positions: []PayoutPosition{{IBAN: "PL61109010140000071219812874", Amount: PLN(1)}}}
 	if err := badTitle.Validate(); err == nil || err.Error() != "dpay: Payout title must be 1-255 characters" {
 		t.Fatalf("err = %v", err)
 	}
-	badMode := PayoutInstruction{FeeMode: "x", Positions: []PayoutPosition{{IBAN: "PL1", Title: "t", Amount: PLN(1)}}}
+	badMode := PayoutInstruction{FeeMode: "x", Positions: []PayoutPosition{{IBAN: "PL61109010140000071219812874", Title: "t", Amount: PLN(1)}}}
 	if err := badMode.Validate(); err == nil || err.Error() != `dpay: Invalid payout fee mode "x"` {
 		t.Fatalf("err = %v", err)
 	}
@@ -185,9 +185,14 @@ func TestBlikAliasRegistrationBody(t *testing.T) {
 	if got := bodyJSON(t, registration.toBody()); got != `{"label":"Mój sklep","type":"UID"}` {
 		t.Fatalf("toBody() = %s", got)
 	}
-	bad := BlikAliasRegistration{Label: strings.Repeat("x", 51), Type: BlikAliasTypeUID}
-	if err := bad.Validate(); err == nil || err.Error() != "dpay: Alias label must be 1-50 characters" {
+	bad := BlikAliasRegistration{Label: strings.Repeat("x", 36), Type: BlikAliasTypeUID}
+	if err := bad.Validate(); err == nil || err.Error() != "dpay: Alias label must be 1-35 characters" {
 		t.Fatalf("err = %v", err)
+	}
+	// characters, not bytes, like the API's max:35
+	longest := BlikAliasRegistration{Label: strings.Repeat("ż", 35), Type: BlikAliasTypeUID}
+	if err := longest.Validate(); err != nil {
+		t.Fatalf("35 characters: %v", err)
 	}
 }
 

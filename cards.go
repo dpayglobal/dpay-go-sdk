@@ -3,6 +3,7 @@ package dpay
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"strings"
 
 	"github.com/dpayglobal/dpay-go-sdk/internal/wire"
@@ -106,6 +107,8 @@ type ApplePayRequest struct {
 	ChannelID *int
 	// Init requests a session instead of a payment.
 	Init bool
+	// Email is the payer's email, sent first when set (like for Google Pay).
+	Email *string
 }
 
 // Validate reports whether the device info is acceptable.
@@ -115,6 +118,7 @@ func (r *ApplePayRequest) Validate() error {
 
 func (r *ApplePayRequest) toBody() *wire.Body {
 	body := wire.NewBody()
+	body.SetIfNotNil("email", r.Email)
 	body.SetIfNotNil("channelId", r.ChannelID)
 	if r.Init {
 		body.Set("xPayType", "APPLE_PAY_INIT")
@@ -227,6 +231,10 @@ func cardPaymentErrorFromAPI(data map[string]any) *CardPaymentError {
 	if value, ok := data["message"].(string); ok {
 		message = value
 	}
+	var cardError *CardError
+	if object, ok := phpArray(data["error"]); ok {
+		cardError = cardErrorFromAPI(object)
+	}
 	return &CardPaymentError{APIError: &APIError{
 		kind:        ErrCardPayment,
 		message:     message,
@@ -234,6 +242,7 @@ func cardPaymentErrorFromAPI(data map[string]any) *CardPaymentError {
 		ErrorCode:   message,
 		FieldErrors: map[string][]string{},
 		RawBody:     marshalRaw(data),
+		CardError:   cardError,
 	}}
 }
 
@@ -296,6 +305,25 @@ func (r *CardPaymentResult) ThreeDSFormHTML() string {
 		return ""
 	}
 	return decodeBase64(r.redirectText)
+}
+
+// ApplePayMerchantSession returns the Apple Pay merchant session of an
+// APPLE_PAY_INIT call: RedirectTypeForm with the Base64-encoded
+// ApplePayMerchantSession JSON in redirectText. Pass it to
+// completeMerchantValidation() on the device. It is nil when the response does
+// not carry a JSON object (e.g. a 3-D Secure form).
+func (r *CardPaymentResult) ApplePayMerchantSession() map[string]any {
+	decoded := r.ThreeDSFormHTML()
+	if decoded == "" {
+		return nil
+	}
+	var session any
+	if err := json.Unmarshal([]byte(decoded), &session); err != nil {
+		return nil
+	}
+	// Only a JSON object is a merchant session
+	object, _ := session.(map[string]any)
+	return object
 }
 
 // RedirectURL returns the decoded redirect target, empty when there is none.

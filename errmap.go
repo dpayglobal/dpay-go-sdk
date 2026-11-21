@@ -24,14 +24,22 @@ func mapAPIError(response apiResponse) error {
 		errorCode = value
 	}
 	reason, _ := data["reason"].(string)
+	// Payments API: the transaction created before the error and the card decline (declined saved-card charge)
+	transactionID, _ := data["transactionId"].(string)
+	var cardError *CardError
+	if object, ok := phpArray(data["cardError"]); ok {
+		cardError = cardErrorFromAPI(object)
+	}
 
 	base := &APIError{
-		message:     message,
-		HTTPStatus:  response.status,
-		ErrorCode:   errorCode,
-		Reason:      reason,
-		FieldErrors: normalizeFieldErrors(data["errors"]),
-		RawBody:     string(response.body),
+		message:       message,
+		HTTPStatus:    response.status,
+		ErrorCode:     errorCode,
+		Reason:        reason,
+		FieldErrors:   normalizeFieldErrors(data["errors"]),
+		RawBody:       string(response.body),
+		TransactionID: transactionID,
+		CardError:     cardError,
 	}
 
 	if response.status == 429 {
@@ -39,11 +47,15 @@ func mapAPIError(response apiResponse) error {
 		base.ErrorCode = ""
 		base.Reason = ""
 		base.FieldErrors = map[string][]string{}
+		// like in the PHP SDK, the rate limit error does not carry the transaction context
+		base.TransactionID = ""
+		base.CardError = nil
 		return &RateLimitError{
 			APIError:   base,
 			RetryAfter: intHeader(response, "Retry-After"),
 			Limit:      intHeader(response, "X-RateLimit-Limit"),
 			Remaining:  intHeader(response, "X-RateLimit-Remaining"),
+			Reset:      int64Header(response, "X-RateLimit-Reset"),
 		}
 	}
 
@@ -93,6 +105,18 @@ func intHeader(response apiResponse, name string) *int {
 		return nil
 	}
 	parsed, err := strconv.Atoi(raw)
+	if err != nil {
+		return nil
+	}
+	return &parsed
+}
+
+func int64Header(response apiResponse, name string) *int64 {
+	raw := response.header(name)
+	if raw == "" {
+		return nil
+	}
+	parsed, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
 		return nil
 	}
