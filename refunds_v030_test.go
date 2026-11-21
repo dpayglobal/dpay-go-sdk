@@ -61,7 +61,7 @@ func TestRefundMessageIDGoesToTheHeaderNotTheChecksum(t *testing.T) {
 	if refund.Message() != "dpay.pl zwrot RET-2026-0001" {
 		t.Fatalf("message = %q", refund.Message())
 	}
-	if values := doer.requests[0].Header[RefundMessageIDHeader]; !reflect.DeepEqual(values, []string{"RET-2026-0001"}) {
+	if values := map[string][]string(doer.requests[0].Header)[RefundMessageIDHeader]; !reflect.DeepEqual(values, []string{"RET-2026-0001"}) {
 		t.Fatalf("headers = %v", doer.requests[0].Header)
 	}
 	if RefundMessageIDHeader != "DigitalPayments-PSP-Message-ID" {

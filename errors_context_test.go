@@ -124,7 +124,7 @@ func TestExtraHeadersAreSentAndValidated(t *testing.T) {
 		requestHeader{name: "DigitalPayments-PSP-Message-ID", value: "RET-1"}); err != nil {
 		t.Fatal(err)
 	}
-	if values := doer.requests[0].Header["DigitalPayments-PSP-Message-ID"]; len(values) != 1 || values[0] != "RET-1" {
+	if values := map[string][]string(doer.requests[0].Header)["DigitalPayments-PSP-Message-ID"]; len(values) != 1 || values[0] != "RET-1" {
 		t.Fatalf("headers = %v - the name must go out exactly as given", doer.requests[0].Header)
 	}
 	if doer.requests[0].Header.Get("Accept") != "application/json" || doer.requests[0].Header.Get("Content-Type") != "application/json" {
